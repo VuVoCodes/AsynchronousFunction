@@ -1,0 +1,114 @@
+% Appendix: Additional Experiments
+
+\subsection{Extended Hyperparameter Analysis}
+
+\subsubsection{Baseline Staleness $\tau_{\text{base}}$}
+
+Table~\ref{tab:app_tau_base} shows sensitivity to $\tau_{\text{base}}$ on CREMA-D.
+
+\begin{table}[h]
+\centering
+\caption{Sensitivity to $\tau_{\text{base}}$ on CREMA-D.}
+\label{tab:app_tau_base}
+\begin{tabular}{cccccc}
+\toprule
+$\tau_{\text{base}}$ & 1 & 2 & 3 & 4 & 5 \\
+\midrule
+Acc & XX.XX & XX.XX & XX.XX & XX.XX & XX.XX \\
+F1 & XX.XX & XX.XX & XX.XX & XX.XX & XX.XX \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{Gradient Compensation $\lambda$}
+
+\begin{table}[h]
+\centering
+\caption{Sensitivity to $\lambda$ on CREMA-D.}
+\label{tab:app_lambda}
+\begin{tabular}{cccccc}
+\toprule
+$\lambda$ & 0 & 0.05 & 0.1 & 0.2 & 0.5 \\
+\midrule
+Acc & XX.XX & XX.XX & XX.XX & XX.XX & XX.XX \\
+F1 & XX.XX & XX.XX & XX.XX & XX.XX & XX.XX \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{Loss Window Size $k$}
+
+\begin{table}[h]
+\centering
+\caption{Sensitivity to loss window size $k$ on CREMA-D.}
+\label{tab:app_k}
+\begin{tabular}{cccccc}
+\toprule
+$k$ & 5 & 10 & 15 & 20 & 30 \\
+\midrule
+Acc & XX.XX & XX.XX & XX.XX & XX.XX & XX.XX \\
+F1 & XX.XX & XX.XX & XX.XX & XX.XX & XX.XX \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Per-Modality Performance}
+
+Table~\ref{tab:app_modality} shows performance of individual modality encoders within the multimodal model, comparing baseline concatenation to \method{}.
+
+\begin{table}[h]
+\centering
+\caption{Per-modality encoder performance on CREMA-D.}
+\label{tab:app_modality}
+\begin{tabular}{lcccc}
+\toprule
+\multirow{2}{*}{Method} & \multicolumn{2}{c}{Audio Encoder} & \multicolumn{2}{c}{Visual Encoder} \\
+\cmidrule(lr){2-3} \cmidrule(lr){4-5}
+& Acc & F1 & Acc & F1 \\
+\midrule
+Concatenation & XX.XX & XX.XX & XX.XX & XX.XX \\
+\method{} & XX.XX & XX.XX & XX.XX & XX.XX \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Different Backbone Architectures}
+
+\begin{table}[h]
+\centering
+\caption{Performance with different backbones on CREMA-D.}
+\label{tab:app_backbone}
+\begin{tabular}{llcc}
+\toprule
+Backbone & Method & Acc & F1 \\
+\midrule
+\multirow{2}{*}{ResNet18} & Baseline & 58.83 & 59.43 \\
+& \method{} & XX.XX & XX.XX \\
+\midrule
+\multirow{2}{*}{ResNet50} & Baseline & XX.XX & XX.XX \\
+& \method{} & XX.XX & XX.XX \\
+\midrule
+\multirow{2}{*}{Swin-Base} & Baseline & 77.66 & -- \\
+& \method{} & XX.XX & XX.XX \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Three-Modality Experiment (MOSI)}
+
+To demonstrate \method{}'s scalability beyond two modalities, we evaluate on MOSI which contains audio, visual, and text modalities.
+
+\begin{table}[h]
+\centering
+\caption{Results on MOSI (3 modalities).}
+\label{tab:app_mosi}
+\begin{tabular}{lcc}
+\toprule
+Method & Acc & F1 \\
+\midrule
+Concatenation & 76.92 & 75.68 \\
+ARL & 79.94 & 78.84 \\
+\method{} & XX.XX & XX.XX \\
+\bottomrule
+\end{tabular}
+\end{table}

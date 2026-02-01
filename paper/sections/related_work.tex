@@ -1,0 +1,23 @@
+% Related Work
+
+\subsection{Multimodal Learning}
+
+Multimodal learning combines information from multiple data sources to improve model performance and robustness~\citep{}. Fusion strategies range from early fusion (concatenating raw inputs) to late fusion (combining modality-specific predictions)~\citep{}. While multimodal models theoretically benefit from complementary information, practical training often yields suboptimal results where multimodal performance fails to exceed that of the best unimodal model~\citep{wang2020makes}.
+
+\subsection{Modality Imbalance Problem}
+
+\citet{wang2020makes} first identified that different modalities overfit and generalize at different rates, leading to suboptimal multimodal learning. This \textit{modality imbalance} problem has since received significant attention.
+
+\textbf{Gradient Modulation.} OGM~\citep{peng2022balanced} reduces gradients of the dominant modality to mitigate suppression of weaker modalities. AGM~\citep{li2023boosting} extends this with adaptive modulation based on modality performance gaps. PMR~\citep{fan2023pmr} introduces prototypical rebalancing to accelerate slow-learning modalities.
+
+\textbf{Unimodal Regularization.} G-Blending~\citep{wang2020makes} optimizes gradient mixing weights based on unimodal and multimodal performance. MMPareto~\citep{wei2024mmpareto} uses Pareto optimization to balance multimodal and unimodal objectives. MLA~\citep{zhang2023mla} transforms joint training into alternating unimodal learning.
+
+\textbf{Imbalanced Learning.} Most recently, ARL~\citep{wei2025improving} challenges the assumption that balanced learning is optimal. Using bias-variance analysis, they show that optimal modality contribution should be inversely proportional to modality variance. However, ARL still updates all modalities synchronously.
+
+\textbf{Our Distinction.} All existing methods maintain synchronous updates—every modality encoder receives gradient updates at every step, differing only in magnitude. \method{} introduces \textit{true asynchrony} with independent update schedules, a fundamentally different mechanism with distinct theoretical properties.
+
+\subsection{Asynchronous Optimization}
+
+Asynchronous SGD enables distributed training where workers compute gradients on potentially stale parameters~\citep{}. Convergence guarantees exist under bounded staleness assumptions~\citep{}. Recent work has explored adaptive staleness bounds~\citep{} and staleness-aware learning rate schedules~\citep{}.
+
+While asynchronous optimization is well-studied in distributed systems, its application to \textit{modality-level} updates in multimodal learning is novel. We adapt staleness concepts from distributed SGD to control per-modality update frequencies, providing a new mechanism for balanced multimodal learning.

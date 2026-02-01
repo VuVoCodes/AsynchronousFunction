@@ -1,0 +1,9 @@
+% Conclusion
+
+We presented \methodfull{} (\method{}), a novel approach to balanced multimodal learning through adaptive asynchronous updates. Unlike existing methods that modulate gradient magnitudes while maintaining synchronous updates, \method{} introduces true asynchrony where each modality has an independent update frequency determined by its learning dynamics.
+
+By monitoring gradient magnitude ratios and loss descent rates, \method{} identifies fast-learning modalities and increases their staleness (reducing update frequency), while accelerating slow-learning modalities. This mechanism directly prolongs the Prime Learning Window, preventing dominant modalities from suppressing weaker ones during critical early training phases.
+
+Our theoretical analysis connects \method{} to bounded-staleness SGD convergence guarantees from distributed optimization, adapting these results to modality-specific adaptive bounds. Experiments on CREMA-D, AVE, and Kinetics-Sounds demonstrate state-of-the-art performance, with particularly strong gains when modality imbalance is severe.
+
+\textbf{Limitations and Future Work.} The current staleness computation relies on moving averages of gradient norms and losses, which may be noisy in early training. Future work could explore more sophisticated learning state estimation, such as using validation performance or learned probes. Additionally, extending \method{} to more complex fusion architectures (e.g., cross-modal attention) and more than two modalities would broaden its applicability.

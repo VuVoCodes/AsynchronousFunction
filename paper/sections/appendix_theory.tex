@@ -1,0 +1,39 @@
+% Appendix: Theoretical Analysis
+
+\subsection{Convergence of Bounded-Staleness SGD}
+
+We first review convergence results for bounded-staleness SGD, then adapt them to \method{}.
+
+\begin{theorem}[Bounded-Staleness SGD Convergence~\citep{}]
+Consider minimizing $f(\theta)$ with bounded-staleness SGD where staleness $\tau \leq \tau_{\max}$. Under standard assumptions (L-smoothness, bounded variance), with learning rate $\eta = O(1/\sqrt{T\tau_{\max}})$:
+\begin{equation}
+    \frac{1}{T}\sum_{t=1}^{T} \mathbb{E}\|\nabla f(\theta_t)\|^2 \leq O\left(\frac{1}{\sqrt{T}} + \frac{\tau_{\max}}{\sqrt{T}}\right)
+\end{equation}
+\end{theorem}
+
+\subsection{Extension to \method{}}
+
+In \method{}, each modality $m_i$ has its own staleness bound $\tau_i \leq \tau_{\max}$. The key insight is that the multimodal loss decomposes as:
+\begin{equation}
+    \mathcal{L}(\theta_1, \ldots, \theta_N, \theta_f) = \mathcal{L}_{\text{fusion}} + \sum_{i=1}^{N} \mathcal{L}_i(\theta_i)
+\end{equation}
+
+Each term $\mathcal{L}_i$ depends only on $\theta_i$, allowing independent staleness bounds. The fusion loss $\mathcal{L}_{\text{fusion}}$ depends on all parameters but is always updated (staleness 0 for $\theta_f$).
+
+\begin{proposition}[\method{} Convergence]
+Under the same assumptions as Theorem 1, \method{} with adaptive staleness $\tau_i(t) \leq \tau_{\max}$ for all $i, t$ converges at rate:
+\begin{equation}
+    \frac{1}{T}\sum_{t=1}^{T} \mathbb{E}\|\nabla \mathcal{L}(\theta_t)\|^2 \leq O\left(\frac{1}{\sqrt{T}} + \frac{N \cdot \tau_{\max}}{\sqrt{T}}\right)
+\end{equation}
+\end{proposition}
+
+The factor of $N$ (number of modalities) is unavoidable when each modality can have independent staleness. In practice, $N$ is small (2-5 modalities), so this does not significantly impact convergence.
+
+\subsection{Gradient Compensation Analysis}
+
+The gradient scaling factor $(1 + \lambda\tau_i)$ compensates for accumulated gradients during staleness. Under the approximation that gradients change slowly:
+\begin{equation}
+    \sum_{s=t-\tau_i}^{t-1} \nabla_{\theta_i}\mathcal{L}_i(\theta_s) \approx \tau_i \cdot \nabla_{\theta_i}\mathcal{L}_i(\theta_t)
+\end{equation}
+
+Thus scaling by $(1 + \lambda\tau_i)$ with $\lambda \approx 1$ recovers the accumulated gradient signal. In practice, we use smaller $\lambda$ for stability.

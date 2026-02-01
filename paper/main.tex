@@ -1,0 +1,84 @@
+\documentclass[11pt]{article}
+\usepackage{neurips_2026}
+
+% Additional packages
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{multirow}
+\usepackage{subcaption}
+\usepackage{xcolor}
+\usepackage{bm}
+
+% Custom commands
+\newcommand{\method}{ASGML}
+\newcommand{\methodfull}{Asynchronous Staleness Guided Multimodal Learning}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\indicator}{\mathbbm{1}}
+
+\title{\methodfull}
+
+% Anonymous submission
+\author{
+  Anonymous Author(s)\\
+  \texttt{anonymous@email.com}
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Multimodal learning often suffers from the modality imbalance problem, where dominant modalities suppress the learning of weaker ones during training. Existing approaches address this through gradient modulation or loss reweighting, but all maintain synchronous updates across modalities. We argue that true asynchronous optimization—where modalities update at different frequencies—remains unexplored and offers distinct theoretical and practical advantages. We propose \methodfull{} (\method{}), a novel approach that introduces adaptive staleness control inspired by distributed systems theory. \method{} monitors each modality's learning dynamics through gradient magnitude ratios and loss descent rates, then adjusts update frequencies to prolong the \textit{Prime Learning Window}—the critical early training phase where all modalities can learn effectively. By throttling fast-learning modalities and accelerating slow ones through genuine update skipping (not just gradient scaling), \method{} maintains balanced learning throughout training. Experiments on CREMA-D, AVE, and Kinetics-Sounds demonstrate that \method{} outperforms state-of-the-art methods including OGM-GE, PMR, MMPareto, and ARL, achieving improvements of X\% on average across benchmarks.
+\end{abstract}
+
+%------------------------------------------------------------------------------
+\section{Introduction}
+\label{sec:intro}
+\input{sections/introduction}
+
+%------------------------------------------------------------------------------
+\section{Related Work}
+\label{sec:related}
+\input{sections/related_work}
+
+%------------------------------------------------------------------------------
+\section{Method}
+\label{sec:method}
+\input{sections/method}
+
+%------------------------------------------------------------------------------
+\section{Experiments}
+\label{sec:experiments}
+\input{sections/experiments}
+
+%------------------------------------------------------------------------------
+\section{Analysis}
+\label{sec:analysis}
+\input{sections/analysis}
+
+%------------------------------------------------------------------------------
+\section{Conclusion}
+\label{sec:conclusion}
+\input{sections/conclusion}
+
+%------------------------------------------------------------------------------
+% References
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+%------------------------------------------------------------------------------
+% Appendix
+\appendix
+\section{Theoretical Analysis}
+\label{app:theory}
+\input{sections/appendix_theory}
+
+\section{Additional Experiments}
+\label{app:experiments}
+\input{sections/appendix_experiments}
+
+\end{document}

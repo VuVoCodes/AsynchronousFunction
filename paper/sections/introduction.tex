@@ -1,0 +1,24 @@
+% Introduction
+
+Multimodal learning has achieved remarkable success across diverse applications including action recognition~\citep{}, audio-visual speech recognition~\citep{}, and sentiment analysis~\citep{}. By leveraging complementary information from multiple modalities, multimodal models have the potential to significantly outperform their unimodal counterparts. However, realizing this potential remains challenging due to the \textit{modality imbalance problem}—a phenomenon where dominant modalities suppress the learning of weaker ones during joint training~\citep{wang2020makes,peng2022balanced}.
+
+Recent work has identified the \textit{Prime Learning Window} as a critical factor in multimodal optimization~\citep{}. During early training, gradient dynamics can cause networks to settle into suboptimal solutions that favor a single modality, effectively closing the window for other modalities to contribute meaningfully. Once this window closes, recovery becomes difficult, leading to under-optimized multimodal representations.
+
+Existing approaches address modality imbalance through two main strategies. \textbf{Gradient modulation} methods~\citep{peng2022balanced,li2023boosting,fan2023pmr} dynamically adjust gradient magnitudes to balance learning across modalities. \textbf{Unimodal regularization} methods~\citep{wei2024mmpareto,zhang2023mla,wei2025diagnosing} introduce auxiliary losses to ensure each modality learns discriminative representations. Most recently, \citet{wei2025improving} proposed Asymmetric Representation Learning (ARL), arguing that \textit{imbalanced} learning based on modality variance ratios can outperform balanced approaches.
+
+However, all existing methods share a fundamental limitation: they maintain \textbf{synchronous updates} across all modalities. Every training step updates every modality encoder, differing only in gradient magnitude or loss weighting. We argue that this overlooks a powerful mechanism from distributed systems: \textbf{asynchronous optimization with gradient staleness}.
+
+In distributed SGD, workers can operate with \textit{stale gradients}—gradients computed on previous parameter states—enabling asynchronous updates that improve system efficiency without sacrificing convergence guarantees~\citep{}. The key insight is that staleness introduces a form of implicit regularization that can be carefully controlled through bounded-delay scheduling.
+
+We propose to adapt this concept to multimodal learning: rather than just scaling gradients, we introduce \textbf{true asynchronous updates} where each modality has an adaptive update frequency. Fast-learning modalities receive higher staleness (fewer updates), while slow-learning modalities receive lower staleness (more frequent updates). This mechanism directly prolongs the Prime Learning Window by preventing any single modality from dominating the optimization trajectory.
+
+Our contributions are as follows:
+\begin{itemize}
+    \item We identify a gap in multimodal learning: true asynchronous optimization with independent modality update schedules remains unexplored, despite its theoretical grounding in distributed systems.
+
+    \item We propose \methodfull{} (\method{}), a novel loss function that introduces adaptive staleness control. \method{} monitors learning dynamics through gradient magnitude ratios and loss descent rates, then adjusts per-modality update frequencies accordingly.
+
+    \item We provide theoretical analysis connecting \method{} to bounded-staleness SGD convergence guarantees, adapting these results to the multimodal setting.
+
+    \item Extensive experiments on CREMA-D, AVE, and Kinetics-Sounds demonstrate that \method{} outperforms state-of-the-art methods, with particularly strong gains when modality imbalance is severe.
+\end{itemize}

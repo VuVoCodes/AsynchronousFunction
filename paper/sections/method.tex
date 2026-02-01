@@ -1,0 +1,120 @@
+% Method
+
+We present \methodfull{} (\method{}), a novel approach for balanced multimodal learning through adaptive asynchronous updates. We first formalize the problem setting, then introduce our monitoring signals and staleness control mechanism.
+
+\subsection{Problem Setting}
+
+Consider a multimodal learning task with $N$ modalities $\{m_1, m_2, \ldots, m_N\}$. Let $\mathcal{D} = \{(\mathbf{x}_i^{m_1}, \mathbf{x}_i^{m_2}, \ldots, \mathbf{x}_i^{m_N}, y_i)\}_{i=1}^{|\mathcal{D}|}$ denote the dataset where $y \in \{1, 2, \ldots, C\}$ represents class labels.
+
+Each modality $m_j$ has an encoder $\phi_j(\theta_j, \cdot)$ with parameters $\theta_j$, producing representations $\mathbf{z}_j = \phi_j(\theta_j, \mathbf{x}^{m_j})$. A fusion module $\psi(\theta_f, \cdot)$ combines modality representations to produce the final prediction:
+\begin{equation}
+    \mathbf{p}^f = \psi(\theta_f, \mathbf{z}_1, \mathbf{z}_2, \ldots, \mathbf{z}_N)
+\end{equation}
+
+In standard multimodal learning, all parameters $\{\theta_1, \ldots, \theta_N, \theta_f\}$ are updated at every training step. Our key insight is that modality encoders can benefit from \textit{different update frequencies} based on their learning dynamics.
+
+\subsection{Monitoring Signals}
+
+We track two complementary signals to assess each modality's learning state:
+
+\textbf{Signal 1: Gradient Magnitude Ratio.} The gradient norm provides an instantaneous measure of learning intensity. For modality $m_i$ at step $t$:
+\begin{equation}
+    G_i(t) = \frac{\|\nabla_{\theta_i} \mathcal{L}_i\|}{\frac{1}{N} \sum_{j=1}^{N} \|\nabla_{\theta_j} \mathcal{L}_j\|}
+\end{equation}
+where $\mathcal{L}_i$ denotes the loss contribution from modality $i$. A ratio $G_i > 1$ indicates modality $i$ has larger-than-average gradients, suggesting it is dominating the optimization.
+
+\textbf{Signal 2: Loss Descent Rate.} Gradient magnitude alone can be noisy. We complement it with a temporal signal tracking loss descent over a window of $k$ steps:
+\begin{equation}
+    D_i(t) = \frac{\Delta \mathcal{L}_i(t)}{\frac{1}{N} \sum_{j=1}^{N} \Delta \mathcal{L}_j(t)}
+\end{equation}
+where $\Delta \mathcal{L}_i(t) = \mathcal{L}_i(t-k) - \mathcal{L}_i(t)$ measures loss decrease. A ratio $D_i > 1$ indicates modality $i$ is learning faster than average.
+
+\textbf{Combined Learning Speed Score.} We combine both signals:
+\begin{equation}
+    S_i(t) = \beta \cdot G_i(t) + (1 - \beta) \cdot D_i(t)
+\end{equation}
+where $\beta \in [0, 1]$ balances instantaneous and temporal information.
+
+\subsection{Adaptive Staleness Control}
+
+The learning speed score determines each modality's update frequency through an \textit{adaptive staleness threshold}:
+\begin{equation}
+    \tau_i(t) = \text{clamp}\left(\tau_{\text{base}} \cdot S_i(t), \tau_{\min}, \tau_{\max}\right)
+\end{equation}
+where:
+\begin{itemize}
+    \item $\tau_{\text{base}}$: baseline staleness (hyperparameter)
+    \item $\tau_{\min} = 1$: minimum staleness (update every step)
+    \item $\tau_{\max}$: maximum staleness bound (e.g., 5-10 steps)
+\end{itemize}
+
+\textbf{Update Decision.} At step $t$, modality $m_i$ updates its encoder parameters if and only if:
+\begin{equation}
+    \text{update}_i(t) = \mathbbm{1}\left[t \mod \lfloor\tau_i(t)\rfloor = 0\right]
+\end{equation}
+
+This introduces \textit{true asynchrony}: fast-learning modalities ($S_i > 1$) have higher staleness and update less frequently, while slow-learning modalities ($S_i < 1$) update more often.
+
+\subsection{Gradient Compensation}
+
+When a modality does update after $\tau_i$ steps of staleness, its gradient may be outdated. Following insights from distributed SGD~\citep{}, we apply staleness-aware gradient scaling:
+\begin{equation}
+    \mathbf{g}_i = \nabla_{\theta_i} \mathcal{L}_i \cdot (1 + \lambda \cdot \tau_i)
+\end{equation}
+where $\lambda$ controls compensation strength. This accounts for the ``missed'' gradient updates during the staleness period.
+
+\subsection{Total Loss Function}
+
+The complete \method{} loss function is:
+\begin{equation}
+    \mathcal{L}_{\text{ASGML}} = \mathcal{L}_{\text{CE}}(\mathbf{p}^f, y) + \gamma \sum_{i=1}^{N} u_i \cdot \mathbbm{1}[\text{update}_i]
+\end{equation}
+where:
+\begin{itemize}
+    \item $\mathcal{L}_{\text{CE}}(\mathbf{p}^f, y)$: cross-entropy loss on fused predictions
+    \item $u_i = \mathcal{L}_{\text{CE}}(\mathbf{p}^{m_i}, y)$: unimodal regularization for modality $i$
+    \item $\gamma$: regularization weight
+    \item $\mathbbm{1}[\text{update}_i]$: indicator for whether modality $i$ updates
+\end{itemize}
+
+The unimodal regularization terms are only applied when the corresponding modality updates, ensuring computational efficiency.
+
+\subsection{Training Algorithm}
+
+Algorithm~\ref{alg:asgml} summarizes the \method{} training procedure.
+
+\begin{algorithm}[t]
+\caption{\method{} Training}
+\label{alg:asgml}
+\begin{algorithmic}[1]
+\REQUIRE Dataset $\mathcal{D}$, iterations $T$, hyperparameters $\tau_{\text{base}}, \tau_{\max}, \beta, \lambda, \gamma$
+\STATE Initialize loss history buffers for each modality
+\FOR{$t = 1, \ldots, T$}
+    \STATE Sample minibatch from $\mathcal{D}$
+    \STATE Forward pass: compute $\mathbf{z}_1, \ldots, \mathbf{z}_N$ and $\mathbf{p}^f$
+    \STATE Compute fusion loss $\mathcal{L}_{\text{CE}}(\mathbf{p}^f, y)$
+    \FOR{each modality $m_i$}
+        \STATE Compute $G_i(t)$ from gradient norms
+        \STATE Compute $D_i(t)$ from loss history
+        \STATE Compute $S_i(t) = \beta G_i(t) + (1-\beta) D_i(t)$
+        \STATE Compute $\tau_i(t) = \text{clamp}(\tau_{\text{base}} \cdot S_i(t), 1, \tau_{\max})$
+        \IF{$t \mod \lfloor\tau_i(t)\rfloor = 0$}
+            \STATE Compute scaled gradient: $\mathbf{g}_i = \nabla_{\theta_i}\mathcal{L}_i \cdot (1 + \lambda\tau_i)$
+            \STATE Update $\theta_i$ using $\mathbf{g}_i$
+            \STATE Apply unimodal regularization $u_i$
+        \ENDIF
+    \ENDFOR
+    \STATE Update fusion parameters $\theta_f$
+\ENDFOR
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Theoretical Connection to Bounded-Staleness SGD}
+
+Our adaptive staleness mechanism connects to convergence results from distributed optimization. In bounded-staleness SGD, convergence is guaranteed when:
+\begin{enumerate}
+    \item Staleness is bounded: $\tau_i \leq \tau_{\max}$ for all $i$
+    \item Learning rate is appropriately scaled with maximum staleness
+\end{enumerate}
+
+\method{} satisfies both conditions through the clamp operation and gradient compensation. The key extension is making staleness bounds \textit{adaptive per modality} based on learning dynamics rather than fixed system constraints. We provide detailed convergence analysis in Appendix~\ref{app:theory}.

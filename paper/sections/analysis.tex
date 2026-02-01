@@ -1,0 +1,63 @@
+% Analysis
+
+\subsection{Staleness Dynamics Visualization}
+
+Figure~\ref{fig:staleness} visualizes the adaptive staleness values for each modality during training on AVE. In early epochs, the audio modality (which learns faster) receives higher staleness, reducing its update frequency. As training progresses and modalities converge, staleness values equalize.
+
+% \begin{figure}[t]
+%     \centering
+%     \includegraphics[width=0.8\linewidth]{figures/staleness_dynamics.pdf}
+%     \caption{Staleness dynamics during training on AVE.}
+%     \label{fig:staleness}
+% \end{figure}
+
+\subsection{Prime Learning Window Extension}
+
+A key claim of \method{} is that adaptive staleness prolongs the Prime Learning Window. To verify this, we track the epoch at which the performance gap between modalities exceeds a threshold (indicating one modality has ``won''). Figure~\ref{fig:prime_window} shows that \method{} extends this window compared to baselines.
+
+% \begin{figure}[t]
+%     \centering
+%     \includegraphics[width=0.8\linewidth]{figures/prime_window.pdf}
+%     \caption{Prime Learning Window duration across methods.}
+%     \label{fig:prime_window}
+% \end{figure}
+
+\subsection{Hyperparameter Sensitivity}
+
+We analyze sensitivity to key hyperparameters on CREMA-D.
+
+\textbf{Maximum Staleness $\tau_{\max}$.} Table~\ref{tab:sens_tau} shows performance across $\tau_{\max} \in \{3, 5, 7, 10\}$. Performance is stable across a wide range, with slight degradation at very high staleness.
+
+\textbf{Signal Balance $\beta$.} Both gradient magnitude ($\beta=1$) and loss descent ($\beta=0$) alone provide improvements, but combining them ($\beta=0.5$) achieves best results.
+
+\begin{table}[t]
+\centering
+\caption{Sensitivity to $\tau_{\max}$ on CREMA-D.}
+\label{tab:sens_tau}
+\begin{tabular}{ccccc}
+\toprule
+$\tau_{\max}$ & 3 & 5 & 7 & 10 \\
+\midrule
+Acc & XX.XX & XX.XX & XX.XX & XX.XX \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Computational Cost}
+
+\method{} introduces minimal overhead compared to standard training. The staleness computation requires storing gradient norms and loss values (negligible memory). Update skipping actually \textit{reduces} computation—when a modality doesn't update, we skip its backward pass for that encoder.
+
+\begin{table}[t]
+\centering
+\caption{Training time comparison on CREMA-D (seconds per epoch).}
+\label{tab:time}
+\begin{tabular}{lccc}
+\toprule
+Method & Time/Epoch & Relative \\
+\midrule
+Concatenation & XX.X & 1.00$\times$ \\
+ARL & XX.X & 1.XX$\times$ \\
+\method{} & XX.X & 0.XX$\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}

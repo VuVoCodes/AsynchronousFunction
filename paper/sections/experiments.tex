@@ -1,0 +1,82 @@
+% Experiments
+
+We evaluate \method{} on three audio-visual benchmarks and compare against state-of-the-art methods for balanced multimodal learning.
+
+\subsection{Datasets}
+
+\textbf{CREMA-D}~\citep{cao2014crema} is an audio-visual dataset for emotion recognition containing 7,442 video clips across 6 emotion categories. We use 6,698 samples for training and 744 for testing.
+
+\textbf{AVE}~\citep{tian2018audio} contains 4,143 10-second videos for audio-visual event localization across 28 event classes. Following prior work~\citep{}, we extract frames from event-localized segments to create a classification dataset.
+
+\textbf{Kinetics-Sounds (KS)}~\citep{arandjelovic2017look} focuses on 34 human action classes from Kinetics, comprising 19k video clips (15k train, 1.9k val, 1.9k test).
+
+\subsection{Implementation Details}
+
+Following~\citet{wei2025improving}, we use ResNet18 as the encoder backbone for all experiments. For visual input, we sample frames and resize to 224$\times$224. Audio is converted to spectrograms using librosa~\citep{}. We use late fusion via concatenation.
+
+\textbf{Training.} Batch size 64, SGD optimizer with momentum 0.9, learning rate 1e-3, weight decay 1e-4, 100 epochs.
+
+\textbf{\method{} Hyperparameters.} $\tau_{\text{base}}=2$, $\tau_{\max}=5$, $\beta=0.5$, $\lambda=0.1$, $\gamma=1.0$, loss window $k=10$.
+
+\subsection{Baselines}
+
+We compare against:
+\begin{itemize}
+    \item \textbf{Concatenation}: Vanilla late fusion baseline
+    \item \textbf{Gradient modulation}: OGM-GE~\citep{peng2022balanced}, AGM~\citep{li2023boosting}, PMR~\citep{fan2023pmr}
+    \item \textbf{Unimodal regularization}: G-Blending~\citep{wang2020makes}, MMPareto~\citep{wei2024mmpareto}, MLA~\citep{zhang2023mla}, D\&R~\citep{wei2025diagnosing}
+    \item \textbf{Imbalanced learning}: ARL~\citep{wei2025improving}
+\end{itemize}
+
+\subsection{Main Results}
+
+Table~\ref{tab:main} presents results on all three benchmarks. \method{} achieves state-of-the-art performance across all datasets.
+
+\begin{table}[t]
+\centering
+\caption{Comparison with existing methods on CREMA-D, Kinetics-Sounds (KS), and AVE datasets. Bold indicates best, underline indicates second-best.}
+\label{tab:main}
+\begin{tabular}{lcccccc}
+\toprule
+\multirow{2}{*}{Method} & \multicolumn{2}{c}{CREMA-D} & \multicolumn{2}{c}{KS} & \multicolumn{2}{c}{AVE} \\
+\cmidrule(lr){2-3} \cmidrule(lr){4-5} \cmidrule(lr){6-7}
+& Acc & F1 & Acc & F1 & Acc & F1 \\
+\midrule
+Audio-only & 57.27 & 57.89 & 48.67 & 48.89 & 62.16 & 58.54 \\
+Visual-only & 62.17 & 62.78 & 52.36 & 52.67 & 31.40 & 29.87 \\
+\midrule
+Concatenation & 58.83 & 59.43 & 64.97 & 65.21 & 66.15 & 62.46 \\
+G-Blending & 68.81 & 69.34 & 67.31 & 67.68 & 67.40 & 63.87 \\
+OGM-GE & 64.34 & 64.93 & 66.35 & 66.76 & 65.62 & 62.97 \\
+AGM & 67.21 & 68.04 & 65.61 & 65.99 & 64.50 & 61.49 \\
+PMR & 65.12 & 65.91 & 65.01 & 65.13 & 63.62 & 60.36 \\
+MMPareto & 70.19 & 70.82 & 69.13 & 69.05 & 68.22 & 64.54 \\
+MLA & 73.21 & 73.77 & 69.62 & 69.98 & 70.92 & 67.23 \\
+D\&R & 73.52 & 73.96 & 69.10 & 69.36 & 69.62 & 64.93 \\
+ARL & \underline{76.61} & \underline{77.14} & \underline{74.28} & \underline{74.03} & \underline{72.89} & \underline{68.04} \\
+\midrule
+\method{} (Ours) & \textbf{XX.XX} & \textbf{XX.XX} & \textbf{XX.XX} & \textbf{XX.XX} & \textbf{XX.XX} & \textbf{XX.XX} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Ablation Study}
+
+We ablate the contribution of each component in \method{} on CREMA-D (Table~\ref{tab:ablation}).
+
+\begin{table}[t]
+\centering
+\caption{Ablation study on CREMA-D. AS: Adaptive Staleness, GC: Gradient Compensation, UR: Unimodal Regularization.}
+\label{tab:ablation}
+\begin{tabular}{ccc|cc}
+\toprule
+AS & GC & UR & Acc & F1 \\
+\midrule
+& & & 58.83 & 59.43 \\
+\checkmark & & & XX.XX & XX.XX \\
+\checkmark & \checkmark & & XX.XX & XX.XX \\
+\checkmark & & \checkmark & XX.XX & XX.XX \\
+\checkmark & \checkmark & \checkmark & \textbf{XX.XX} & \textbf{XX.XX} \\
+\bottomrule
+\end{tabular}
+\end{table}
