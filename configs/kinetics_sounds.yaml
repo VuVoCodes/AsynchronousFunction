@@ -4,8 +4,8 @@
 # Dataset
 dataset:
   name: kinetics_sounds
-  root: /path/to/Kinetics-Sounds  # Update this path
-  num_classes: 34
+  root: data/Kinetics-Sounds
+  num_classes: 31  # 31 classes in Kinetics-Sounds subset
   modalities: [audio, visual]
 
 # Model

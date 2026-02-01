@@ -5,7 +5,7 @@
 # Dataset
 dataset:
   name: ave
-  root: /path/to/AVE  # Update this path
+  root: data/AVE
   num_classes: 28
   modalities: [audio, visual]
 

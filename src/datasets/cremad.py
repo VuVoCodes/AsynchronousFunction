@@ -85,7 +85,10 @@ class CREMADDataset(Dataset):
         samples = []
 
         audio_dir = os.path.join(self.root, "AudioWAV")
-        video_dir = os.path.join(self.root, "VideoFlash")
+        # Look for extracted frames first, fall back to VideoFlash
+        video_dir = os.path.join(self.root, "VideoFrames")
+        if not os.path.exists(video_dir):
+            video_dir = os.path.join(self.root, "VideoFlash")
 
         # List all audio files
         if not os.path.exists(audio_dir):
@@ -157,21 +160,22 @@ class CREMADDataset(Dataset):
     def _load_visual(self, video_path: str) -> torch.Tensor:
         """Load a single frame from video."""
         try:
+            # Check if path ends with .jpg (extracted frame)
+            if video_path.endswith('.jpg') and os.path.exists(video_path):
+                image = Image.open(video_path).convert('RGB')
             # Try to load a frame (assuming frames are extracted)
-            frame_path = video_path + ".jpg"
-            if os.path.exists(frame_path):
-                image = Image.open(frame_path).convert('RGB')
-            else:
-                # Try directory with frames
-                if os.path.isdir(video_path):
-                    frames = sorted(os.listdir(video_path))
-                    if frames:
-                        mid_frame = frames[len(frames) // 2]
-                        image = Image.open(os.path.join(video_path, mid_frame)).convert('RGB')
-                    else:
-                        image = Image.new('RGB', (224, 224), color='black')
+            elif os.path.exists(video_path + ".jpg"):
+                image = Image.open(video_path + ".jpg").convert('RGB')
+            # Try directory with frames
+            elif os.path.isdir(video_path):
+                frames = sorted(os.listdir(video_path))
+                if frames:
+                    mid_frame = frames[len(frames) // 2]
+                    image = Image.open(os.path.join(video_path, mid_frame)).convert('RGB')
                 else:
                     image = Image.new('RGB', (224, 224), color='black')
+            else:
+                image = Image.new('RGB', (224, 224), color='black')
 
             return self.visual_transform(image)
 
