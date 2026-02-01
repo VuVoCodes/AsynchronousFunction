@@ -293,6 +293,7 @@ class ASGMLScheduler:
         # General
         beta: float = 0.5,
         lambda_comp: float = 0.1,  # Gradient compensation factor
+        max_staleness_ratio: float = 3.0,  # κ: max ratio between modality staleness values
     ):
         """
         Args:
@@ -307,6 +308,9 @@ class ASGMLScheduler:
             threshold_delta: Utilization gap that triggers adaptation
             beta: Weight for gradient vs loss signals in dynamics tracking
             lambda_comp: Gradient scaling compensation factor
+            max_staleness_ratio: κ (kappa) - maximum allowed ratio τ_i/τ_j between
+                any two modalities. Prevents "Stale Fusion" problem where one encoder
+                drifts too far ahead of others. Set to inf to disable constraint.
         """
         self.modalities = modalities
         self.mode = mode
@@ -318,6 +322,7 @@ class ASGMLScheduler:
         self.tau_max = tau_max
         self.threshold_delta = threshold_delta
         self.lambda_comp = lambda_comp
+        self.max_staleness_ratio = max_staleness_ratio
 
         # Current staleness/frequency values per modality
         self.current_tau: Dict[str, float] = {m: 1.0 for m in modalities}
@@ -393,23 +398,30 @@ class ASGMLScheduler:
 
         # Frequency mode: check if each modality should update
         update_mask = {}
-        for m in self.modalities:
-            if self.adaptation == "fixed":
+
+        if self.adaptation == "fixed":
+            for m in self.modalities:
                 # Fixed frequency: dominant updates every fixed_ratio steps
                 if m == self._dominant_modality:
                     update_mask[m] = (self.current_step % self.fixed_ratio) == 0
                 else:
                     update_mask[m] = True
-            else:
-                # Adaptive frequency: use current_tau
-                tau = int(round(self.current_tau[m]))
-                update_mask[m] = (self.current_step % max(tau, 1)) == 0
+        else:
+            # Adaptive frequency: use current_tau with constraint
+            raw_tau = {m: int(round(self.current_tau[m])) for m in self.modalities}
+            constrained_tau = self._apply_staleness_constraint(raw_tau)
+
+            for m in self.modalities:
+                tau = max(constrained_tau[m], 1)
+                update_mask[m] = (self.current_step % tau) == 0
 
         return update_mask
 
     def get_staleness_values(self) -> Dict[str, int]:
         """
         Get staleness τ for each modality (for staleness mode).
+
+        Applies relative staleness constraint to prevent Stale Fusion problem.
 
         Returns:
             Dict mapping modality names to staleness values
@@ -427,7 +439,8 @@ class ASGMLScheduler:
             else:
                 staleness[m] = int(round(self.current_tau[m])) - 1  # τ-1 steps old
 
-        return staleness
+        # Apply relative staleness constraint (Stale Fusion mitigation)
+        return self._apply_staleness_constraint(staleness)
 
     def get_gradient_scales(self) -> Dict[str, float]:
         """
@@ -452,6 +465,35 @@ class ASGMLScheduler:
     def step(self) -> None:
         """Increment step counter (call at end of each training step)."""
         self.current_step += 1
+
+    def _apply_staleness_constraint(
+        self, staleness_values: Dict[str, int]
+    ) -> Dict[str, int]:
+        """
+        Apply relative staleness constraint to prevent Stale Fusion problem.
+
+        Ensures τ_i / τ_j ≤ κ for all modality pairs (i, j).
+        This bounds the "training age gap" between encoders.
+
+        Args:
+            staleness_values: Raw staleness values per modality
+
+        Returns:
+            Constrained staleness values
+        """
+        if self.max_staleness_ratio <= 0 or self.max_staleness_ratio == float('inf'):
+            return staleness_values
+
+        # Find minimum staleness (modality learning slowest, needs most updates)
+        min_tau = min(max(v, 1) for v in staleness_values.values())
+
+        # Constrain all modalities: τ_i ≤ κ * min_τ
+        constrained = {}
+        for m, tau in staleness_values.items():
+            max_allowed = int(min_tau * self.max_staleness_ratio)
+            constrained[m] = min(tau, max_allowed)
+
+        return constrained
 
     def reset(self) -> None:
         """Reset scheduler state (call at start of training)."""

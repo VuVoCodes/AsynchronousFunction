@@ -45,6 +45,7 @@ asgml:
   tau_base: 2.0
   tau_min: 1.0
   tau_max: 4.0  # As per ARL paper (T=4)
+  max_staleness_ratio: 3.0  # κ: max τ_i/τ_j ratio (Stale Fusion constraint)
 
   # Signal weighting
   beta: 0.5

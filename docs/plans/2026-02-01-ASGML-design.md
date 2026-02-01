@@ -132,6 +132,68 @@ The Prime Learning Window problem (from multimodal learning literature):
 
 ASGML prolongs this window by throttling fast learners, keeping all modalities in active learning phase.
 
+### 5.3 The Stale Fusion Problem (Critical Research Question)
+
+**Problem Statement:**
+When modality encoders update at different frequencies, the fusion layer receives features from encoders at different "training ages":
+
+```
+Audio encoder: θ_audio^(t)     (updated t times)
+Video encoder: θ_video^(t-τ)   (updated t-τ times, frozen for τ steps)
+Fusion input:  [f_audio^(t), f_video^(t-τ)]  ← TEMPORAL MISALIGNMENT
+```
+
+**Potential Failure Modes:**
+1. **Representation drift**: Fast-updating encoder features move in representation space while slow encoder features stay fixed
+2. **Semantic misalignment**: Learned cross-modal correlations become invalid
+3. **Fusion layer confusion**: Weights learned assuming synchronized features
+
+**Theoretical Analysis (Required for Paper):**
+
+Let Δτ = max_i(τ_i) - min_i(τ_i) be the maximum staleness gap between any two modalities.
+
+**Claim (N-modality bound)**: For N modalities, the fusion error is bounded by:
+```
+||f_fusion(θ^t) - f_fusion(θ^{sync})|| ≤ L_f * Σᵢ^N ||θᵢ^t - θᵢ^{sync}||
+                                        ≤ L_f * N * Δτ * η * max_i(||∇θᵢ||)
+```
+
+Where L_f is the Lipschitz constant of the fusion layer.
+
+**Key insight**: Fusion error grows:
+- **Linearly with N** (not quadratically) - because fusion combines features, not pairwise interactions
+- **Linearly with Δτ** - staleness gap
+- **Linearly with η** - learning rate
+
+**Scalability to N>2 modalities:**
+- Constraint uses global min: `min_τ = min_i(τ_i)` across ALL modalities
+- Every modality bounded: `τ_i ≤ κ * min_τ`
+- This is O(N) comparisons, not O(N²) pairwise checks
+- For N=5 with κ=3: if slowest has τ=1, all others capped at τ=3
+
+**Mitigation Strategies:**
+
+1. **Relative staleness constraint** (implemented):
+   ```
+   τ_i / τ_j ≤ κ  for all modality pairs (i,j)
+   ```
+   Where κ (kappa) bounds the maximum staleness ratio (e.g., κ=3)
+
+2. **Fusion layer always updates**: Already in design - fusion sees all features every step and adapts
+
+3. **Gradual staleness ramp-up**: Don't apply max staleness immediately; ramp up over warmup period
+
+4. **Feature normalization**: Normalize encoder outputs before fusion to bound drift
+
+**Empirical Validation Required:**
+- Ablation: Performance vs. max staleness gap Δτ
+- Ablation: Performance vs. staleness ratio κ
+- Visualization: Feature drift in representation space (t-SNE/UMAP across training)
+- Comparison: With vs. without relative staleness constraint
+
+**Reviewer Defense:**
+"Unlike distributed async SGD where workers train on different data, ASGML encoders see the SAME data every step. The fusion layer observes all features every forward pass and continuously adapts. Our experiments (Section X) show performance remains stable up to staleness gap Δτ=5, with graceful degradation beyond."
+
 ## 6. Comparison with Existing Methods
 
 | Method | Update Scheme | Staleness | Adaptive |
@@ -193,6 +255,11 @@ Following ARL paper setup for fair comparison:
 2. Sensitivity to hyperparameters (τ_base, τ_max, β, λ)
 3. Visualization of staleness dynamics during training
 4. Prime window extension analysis
+5. **Stale Fusion Analysis** (Section 5.3):
+   - Performance vs. max staleness gap Δτ ∈ {1, 2, 3, 5, 8, 10}
+   - Performance vs. staleness ratio κ ∈ {2, 3, 5, ∞}
+   - Feature drift visualization (t-SNE at epochs 10, 50, 100)
+   - With vs. without relative staleness constraint
 
 ## 8. Brainstorming Trajectory
 

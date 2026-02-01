@@ -488,6 +488,7 @@ def main():
             threshold_delta=config["asgml"].get("threshold_delta", 0.1),
             beta=config["asgml"]["beta"],
             lambda_comp=config["asgml"]["lambda_comp"],
+            max_staleness_ratio=config["asgml"].get("max_staleness_ratio", 3.0),
         )
 
     # Create probe manager
