@@ -70,6 +70,8 @@ check_dependencies() {
         log_warn "git-lfs not found. Installing..."
         if command -v brew >/dev/null 2>&1; then
             brew install git-lfs
+        elif command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get install -y git-lfs
         else
             log_error "Please install git-lfs manually"
             exit 1
@@ -118,32 +120,14 @@ prepare_cremad() {
     git lfs fetch --all
     git lfs checkout
 
-    # Extract video frames
+    # Return to project root and run extraction script
+    cd "$PROJECT_ROOT"
     log_info "Extracting video frames..."
-    mkdir -p VideoFrames
-
-    local total=$(ls VideoFlash/*.flv 2>/dev/null | wc -l)
-    local count=0
-
-    for flv in VideoFlash/*.flv; do
-        if [ -f "$flv" ]; then
-            basename=$(basename "$flv" .flv)
-            output="VideoFrames/${basename}.jpg"
-
-            if [ ! -f "$output" ]; then
-                ffmpeg -i "$flv" -vf "select=eq(n\,5)" -vframes 1 -q:v 2 "$output" -y 2>/dev/null
-            fi
-
-            ((count++))
-            if [ $((count % 500)) -eq 0 ]; then
-                log_info "Processed $count / $total frames"
-            fi
-        fi
-    done
+    bash "${SCRIPT_DIR}/extract_cremad_frames.sh" "$CREMAD_DIR"
 
     log_info "CREMA-D preparation complete!"
-    log_info "  - Audio: AudioWAV/ ($(ls AudioWAV/*.wav 2>/dev/null | wc -l) files)"
-    log_info "  - Video frames: VideoFrames/ ($(ls VideoFrames/*.jpg 2>/dev/null | wc -l) files)"
+    log_info "  - Audio: $CREMAD_DIR/AudioWAV/"
+    log_info "  - Video frames: $CREMAD_DIR/VideoFrames/"
 }
 
 # ============================================================================
@@ -158,9 +142,12 @@ prepare_ave() {
 
     local AVE_DIR="${DATA_DIR}/AVE"
 
-    if [ -d "$AVE_DIR" ] && [ -d "$AVE_DIR/AVE_Dataset" ]; then
-        log_info "AVE already prepared. Skipping."
-        return
+    if [ -d "$AVE_DIR/video_frames" ] && [ -d "$AVE_DIR/audio" ]; then
+        local frame_count=$(ls "$AVE_DIR/video_frames" 2>/dev/null | wc -l)
+        if [ "$frame_count" -gt 100 ]; then
+            log_info "AVE already prepared ($frame_count videos). Skipping."
+            return
+        fi
     fi
 
     mkdir -p "$AVE_DIR"
@@ -170,15 +157,16 @@ prepare_ave() {
     log_info "This requires ~8GB of disk space"
 
     # Google Drive file ID for AVE dataset
-    # From: https://drive.google.com/open?id=1FjKwe79e0u96vdjIVwfRQ1V6SoDHe7kK
     local GDRIVE_ID="1FjKwe79e0u96vdjIVwfRQ1V6SoDHe7kK"
 
     if [ ! -f "AVE_Dataset.zip" ]; then
         gdown "https://drive.google.com/uc?id=${GDRIVE_ID}" -O AVE_Dataset.zip
     fi
 
-    log_info "Extracting AVE dataset..."
-    unzip -q AVE_Dataset.zip
+    if [ ! -d "AVE_Dataset" ]; then
+        log_info "Extracting AVE dataset..."
+        unzip -q AVE_Dataset.zip
+    fi
 
     # Clone the official repo for annotations and splits
     if [ ! -d "AVE-ECCV18" ]; then
@@ -186,48 +174,15 @@ prepare_ave() {
         git clone https://github.com/YapengTian/AVE-ECCV18.git
     fi
 
-    # Create directory structure expected by loader
-    mkdir -p video_frames audio annotations
-
-    # Copy annotations
-    if [ -d "AVE-ECCV18/data" ]; then
-        cp AVE-ECCV18/data/*.txt annotations/ 2>/dev/null || true
-    fi
-
-    # Extract frames and audio from videos
-    log_info "Extracting frames and audio from videos..."
-    local total=$(ls AVE_Dataset/*.mp4 2>/dev/null | wc -l | tr -d ' ')
-    local count=0
-
-    for video in AVE_Dataset/*.mp4; do
-        if [ -f "$video" ]; then
-            basename=$(basename "$video" .mp4)
-
-            # Create frame directory
-            frame_dir="video_frames/${basename}"
-            mkdir -p "$frame_dir"
-
-            # Extract frames (1 fps for 10-second videos = ~10 frames)
-            if [ ! -f "$frame_dir/frame_001.jpg" ]; then
-                ffmpeg -i "$video" -vf "fps=1" -q:v 2 "$frame_dir/frame_%03d.jpg" -y 2>/dev/null
-            fi
-
-            # Extract audio
-            if [ ! -f "audio/${basename}.wav" ]; then
-                ffmpeg -i "$video" -vn -acodec pcm_s16le -ar 16000 -ac 1 "audio/${basename}.wav" -y 2>/dev/null
-            fi
-
-            ((count++))
-            if [ $((count % 100)) -eq 0 ]; then
-                log_info "Processed $count / $total videos"
-            fi
-        fi
-    done
+    # Return to project root and run extraction script
+    cd "$PROJECT_ROOT"
+    log_info "Extracting frames and audio..."
+    bash "${SCRIPT_DIR}/extract_ave_frames.sh" "$AVE_DIR"
 
     log_info "AVE preparation complete!"
-    log_info "  - Video frames: video_frames/ ($(ls video_frames 2>/dev/null | wc -l) videos)"
-    log_info "  - Audio: audio/ ($(ls audio/*.wav 2>/dev/null | wc -l) files)"
-    log_info "  - Annotations: annotations/"
+    log_info "  - Video frames: $AVE_DIR/video_frames/"
+    log_info "  - Audio: $AVE_DIR/audio/"
+    log_info "  - Annotations: $AVE_DIR/annotations/"
 }
 
 # ============================================================================
@@ -278,10 +233,11 @@ prepare_kinetics_sounds() {
 
     local KS_DIR="${DATA_DIR}/Kinetics-Sounds"
 
-    if [ -d "$KS_DIR" ] && [ -d "$KS_DIR/videos" ]; then
-        local video_count=$(find "$KS_DIR/videos" -name "*.mp4" 2>/dev/null | wc -l)
+    # Check if already processed
+    if [ -d "$KS_DIR/train" ]; then
+        local video_count=$(find "$KS_DIR/train" -type d -mindepth 2 2>/dev/null | wc -l)
         if [ "$video_count" -gt 1000 ]; then
-            log_info "Kinetics-Sounds already has $video_count videos. Skipping."
+            log_info "Kinetics-Sounds already has $video_count processed videos. Skipping."
             return
         fi
     fi
@@ -303,21 +259,18 @@ prepare_kinetics_sounds() {
     # Download kinetics-400 annotations
     if [ ! -f "kinetics-400_train.csv" ]; then
         log_info "Downloading Kinetics-400 annotations..."
-        # From cvdfoundation/kinetics-dataset
         wget -q "https://storage.googleapis.com/deepmind-media/Datasets/kinetics400.tar.gz" -O kinetics400.tar.gz
         tar -xzf kinetics400.tar.gz
         mv kinetics400/*.csv . 2>/dev/null || true
+        rm -rf kinetics400 kinetics400.tar.gz
     fi
 
     # Create class list file
     log_info "Creating Kinetics-Sounds class list..."
     printf '%s\n' "${KINETICS_SOUNDS_CLASSES[@]}" > kinetics_sounds_classes.txt
 
-    # Create filtered annotations
-    log_info "Filtering for Kinetics-Sounds classes..."
-    mkdir -p videos audio frames
-
     # Create download script
+    log_info "Creating download script..."
     cat > download_ks_videos.py << 'PYTHON_SCRIPT'
 #!/usr/bin/env python3
 """Download Kinetics-Sounds videos from YouTube."""
@@ -344,7 +297,6 @@ def download_video(youtube_id, start_time, end_time, output_path):
 
     url = f"https://www.youtube.com/watch?v={youtube_id}"
 
-    # Download with yt-dlp
     cmd = [
         "yt-dlp",
         "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
@@ -357,11 +309,10 @@ def download_video(youtube_id, start_time, end_time, output_path):
     try:
         subprocess.run(cmd, check=True, capture_output=True, timeout=120)
         return True
-    except Exception as e:
+    except Exception:
         return False
 
 def main():
-    # Process each split
     for split in ["train", "validate", "test"]:
         csv_file = f"kinetics-400_{split}.csv"
         if not os.path.exists(csv_file):
@@ -381,7 +332,6 @@ def main():
                 start = float(row.get('time_start', 0))
                 end = float(row.get('time_end', 10))
 
-                # Create class directory
                 class_dir = Path("videos") / label.replace(" ", "_")
                 class_dir.mkdir(parents=True, exist_ok=True)
 
@@ -399,88 +349,13 @@ PYTHON_SCRIPT
 
     chmod +x download_ks_videos.py
 
-    # Create processing script
-    cat > process_ks_videos.py << 'PROCESS_SCRIPT'
-#!/usr/bin/env python3
-"""Process downloaded Kinetics-Sounds videos: extract frames and audio."""
-import os
-import subprocess
-from pathlib import Path
-import csv
-
-def process_video(video_path, output_dir):
-    """Extract frames and audio from a video."""
-    output_dir = Path(output_dir)
-    frames_dir = output_dir / "frames"
-    frames_dir.mkdir(parents=True, exist_ok=True)
-
-    # Extract frames (3 fps)
-    if not list(frames_dir.glob("*.jpg")):
-        subprocess.run([
-            "ffmpeg", "-i", str(video_path),
-            "-vf", "fps=3", "-q:v", "2",
-            str(frames_dir / "frame_%03d.jpg"),
-            "-y"
-        ], capture_output=True)
-
-    # Extract audio
-    audio_path = output_dir / "audio.wav"
-    if not audio_path.exists():
-        subprocess.run([
-            "ffmpeg", "-i", str(video_path),
-            "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1",
-            str(audio_path), "-y"
-        ], capture_output=True)
-
-def main():
-    videos_dir = Path("videos")
-
-    # Determine split from CSV files
-    split_map = {}  # video_id -> split
-    for split, csv_name in [("train", "kinetics-400_train.csv"),
-                            ("val", "kinetics-400_validate.csv"),
-                            ("test", "kinetics-400_test.csv")]:
-        if os.path.exists(csv_name):
-            with open(csv_name, 'r') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    vid = row.get('youtube_id', '')
-                    if vid:
-                        split_map[vid] = split
-
-    # Process each video
-    for class_dir in videos_dir.iterdir():
-        if not class_dir.is_dir():
-            continue
-
-        class_name = class_dir.name
-
-        for video_file in class_dir.glob("*.mp4"):
-            # Parse video ID from filename
-            parts = video_file.stem.split("_")
-            youtube_id = parts[0] if parts else video_file.stem
-
-            # Determine split
-            split = split_map.get(youtube_id, "train")
-
-            # Create output directory
-            output_dir = Path(split) / class_name / video_file.stem
-
-            print(f"Processing: {video_file.name} -> {output_dir}")
-            process_video(video_file, output_dir)
-
-if __name__ == "__main__":
-    main()
-PROCESS_SCRIPT
-
-    chmod +x process_ks_videos.py
-
+    log_info ""
     log_info "Kinetics-Sounds setup complete!"
     log_info ""
-    log_info "To download and process videos, run:"
+    log_info "To download and process videos, run these commands:"
     log_info "  cd ${KS_DIR}"
-    log_info "  python download_ks_videos.py    # Download from YouTube"
-    log_info "  python process_ks_videos.py     # Extract frames and audio"
+    log_info "  python download_ks_videos.py                           # Step 1: Download from YouTube"
+    log_info "  bash ${SCRIPT_DIR}/extract_kinetics_frames.sh ${KS_DIR}  # Step 2: Extract frames and audio"
     log_info ""
     log_warn "Note: YouTube downloads may fail for some videos (removed/private)."
     log_warn "Expect ~15-18k videos out of 19k to be available."
@@ -527,8 +402,8 @@ main() {
     log_info "=========================================="
     log_info ""
     log_info "Dataset locations:"
-    log_info "  CREMA-D:        ${DATA_DIR}/CREMA-D"
-    log_info "  AVE:            ${DATA_DIR}/AVE"
+    log_info "  CREMA-D:         ${DATA_DIR}/CREMA-D"
+    log_info "  AVE:             ${DATA_DIR}/AVE"
     log_info "  Kinetics-Sounds: ${DATA_DIR}/Kinetics-Sounds"
 }
 
