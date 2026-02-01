@@ -1,5 +1,5 @@
 # Kinetics-Sounds Dataset Configuration
-# Audio-visual action recognition (34 classes)
+# Audio-visual action recognition (31 classes)
 
 # Dataset
 dataset:

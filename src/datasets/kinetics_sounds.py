@@ -34,16 +34,16 @@ class KineticsSoundsDataset(Dataset):
         test/
     """
 
+    # 31 classes from "Look, Listen and Learn" (Arandjelovic & Zisserman, ICCV 2017)
     CLASSES = [
-        "blowing nose", "blowing out candles", "brushing teeth", "chopping wood",
-        "coughing", "drinking", "eating chips", "eating watermelon",
-        "laughing", "mowing lawn", "playing accordion", "playing bagpipes",
-        "playing bass guitar", "playing drums", "playing guitar", "playing harmonica",
-        "playing keyboard", "playing organ", "playing piano", "playing saxophone",
-        "playing trombone", "playing trumpet", "playing violin", "playing xylophone",
-        "ripping paper", "shoveling snow", "shuffling cards", "singing",
-        "sneezing", "stomping grapes", "strumming guitar", "tap dancing",
-        "tapping guitar", "typing"
+        "blowing_nose", "blowing_out_candles", "bowling", "chopping_wood",
+        "dribbling_basketball", "laughing", "mowing_lawn", "playing_accordion",
+        "playing_bagpipes", "playing_bass_guitar", "playing_clarinet",
+        "playing_drums", "playing_guitar", "playing_harmonica", "playing_keyboard",
+        "playing_organ", "playing_piano", "playing_saxophone", "playing_trombone",
+        "playing_trumpet", "playing_violin", "playing_xylophone", "ripping_paper",
+        "shoveling_snow", "shuffling_cards", "singing", "stomping_grapes",
+        "tap_dancing", "tapping_guitar", "tapping_pen", "tickling"
     ]
 
     def __init__(

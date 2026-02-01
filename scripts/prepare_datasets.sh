@@ -186,9 +186,48 @@ prepare_ave() {
         git clone https://github.com/YapengTian/AVE-ECCV18.git
     fi
 
+    # Create directory structure expected by loader
+    mkdir -p video_frames audio annotations
+
+    # Copy annotations
+    if [ -d "AVE-ECCV18/data" ]; then
+        cp AVE-ECCV18/data/*.txt annotations/ 2>/dev/null || true
+    fi
+
+    # Extract frames and audio from videos
+    log_info "Extracting frames and audio from videos..."
+    local total=$(ls AVE_Dataset/*.mp4 2>/dev/null | wc -l | tr -d ' ')
+    local count=0
+
+    for video in AVE_Dataset/*.mp4; do
+        if [ -f "$video" ]; then
+            basename=$(basename "$video" .mp4)
+
+            # Create frame directory
+            frame_dir="video_frames/${basename}"
+            mkdir -p "$frame_dir"
+
+            # Extract frames (1 fps for 10-second videos = ~10 frames)
+            if [ ! -f "$frame_dir/frame_001.jpg" ]; then
+                ffmpeg -i "$video" -vf "fps=1" -q:v 2 "$frame_dir/frame_%03d.jpg" -y 2>/dev/null
+            fi
+
+            # Extract audio
+            if [ ! -f "audio/${basename}.wav" ]; then
+                ffmpeg -i "$video" -vn -acodec pcm_s16le -ar 16000 -ac 1 "audio/${basename}.wav" -y 2>/dev/null
+            fi
+
+            ((count++))
+            if [ $((count % 100)) -eq 0 ]; then
+                log_info "Processed $count / $total videos"
+            fi
+        fi
+    done
+
     log_info "AVE preparation complete!"
-    log_info "  - Videos: AVE_Dataset/"
-    log_info "  - Annotations: AVE-ECCV18/data/"
+    log_info "  - Video frames: video_frames/ ($(ls video_frames 2>/dev/null | wc -l) videos)"
+    log_info "  - Audio: audio/ ($(ls audio/*.wav 2>/dev/null | wc -l) files)"
+    log_info "  - Annotations: annotations/"
 }
 
 # ============================================================================
@@ -360,11 +399,88 @@ PYTHON_SCRIPT
 
     chmod +x download_ks_videos.py
 
+    # Create processing script
+    cat > process_ks_videos.py << 'PROCESS_SCRIPT'
+#!/usr/bin/env python3
+"""Process downloaded Kinetics-Sounds videos: extract frames and audio."""
+import os
+import subprocess
+from pathlib import Path
+import csv
+
+def process_video(video_path, output_dir):
+    """Extract frames and audio from a video."""
+    output_dir = Path(output_dir)
+    frames_dir = output_dir / "frames"
+    frames_dir.mkdir(parents=True, exist_ok=True)
+
+    # Extract frames (3 fps)
+    if not list(frames_dir.glob("*.jpg")):
+        subprocess.run([
+            "ffmpeg", "-i", str(video_path),
+            "-vf", "fps=3", "-q:v", "2",
+            str(frames_dir / "frame_%03d.jpg"),
+            "-y"
+        ], capture_output=True)
+
+    # Extract audio
+    audio_path = output_dir / "audio.wav"
+    if not audio_path.exists():
+        subprocess.run([
+            "ffmpeg", "-i", str(video_path),
+            "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1",
+            str(audio_path), "-y"
+        ], capture_output=True)
+
+def main():
+    videos_dir = Path("videos")
+
+    # Determine split from CSV files
+    split_map = {}  # video_id -> split
+    for split, csv_name in [("train", "kinetics-400_train.csv"),
+                            ("val", "kinetics-400_validate.csv"),
+                            ("test", "kinetics-400_test.csv")]:
+        if os.path.exists(csv_name):
+            with open(csv_name, 'r') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    vid = row.get('youtube_id', '')
+                    if vid:
+                        split_map[vid] = split
+
+    # Process each video
+    for class_dir in videos_dir.iterdir():
+        if not class_dir.is_dir():
+            continue
+
+        class_name = class_dir.name
+
+        for video_file in class_dir.glob("*.mp4"):
+            # Parse video ID from filename
+            parts = video_file.stem.split("_")
+            youtube_id = parts[0] if parts else video_file.stem
+
+            # Determine split
+            split = split_map.get(youtube_id, "train")
+
+            # Create output directory
+            output_dir = Path(split) / class_name / video_file.stem
+
+            print(f"Processing: {video_file.name} -> {output_dir}")
+            process_video(video_file, output_dir)
+
+if __name__ == "__main__":
+    main()
+PROCESS_SCRIPT
+
+    chmod +x process_ks_videos.py
+
     log_info "Kinetics-Sounds setup complete!"
     log_info ""
-    log_info "To download videos, run:"
+    log_info "To download and process videos, run:"
     log_info "  cd ${KS_DIR}"
-    log_info "  python download_ks_videos.py"
+    log_info "  python download_ks_videos.py    # Download from YouTube"
+    log_info "  python process_ks_videos.py     # Extract frames and audio"
     log_info ""
     log_warn "Note: YouTube downloads may fail for some videos (removed/private)."
     log_warn "Expect ~15-18k videos out of 19k to be available."
