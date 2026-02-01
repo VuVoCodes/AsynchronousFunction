@@ -174,7 +174,8 @@ class ProbeManager:
             optimizer = self.optimizers[modality]
 
             # CRITICAL: Detach features to prevent backprop into encoder
-            feat = features[modality].detach()
+            # Convert to float32 for probe training (handles AMP float16 features)
+            feat = features[modality].detach().float()
 
             probe.train()
             for _ in range(num_steps):
@@ -213,7 +214,8 @@ class ProbeManager:
             probe.eval()
 
             # CRITICAL: Detach features
-            feat = features[modality].detach()
+            # Convert to float32 for probe evaluation (handles AMP float16 features)
+            feat = features[modality].detach().float()
 
             logits = probe(feat)
             loss = F.cross_entropy(logits, targets)

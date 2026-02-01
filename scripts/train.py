@@ -35,6 +35,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+from torch.amp import autocast, GradScaler
 from tqdm import tqdm
 
 # Add src to path
@@ -77,30 +78,72 @@ def get_dataset(config: dict, split: str):
         raise ValueError(f"Unknown dataset: {name}")
 
 
-def get_optimizer(model: nn.Module, config: dict):
-    """Create optimizer based on config."""
+def get_optimizer(
+    model: nn.Module,
+    config: dict,
+    modality_lr_scales: dict = None,
+):
+    """
+    Create optimizer based on config with optional per-modality learning rates.
+
+    Args:
+        model: The multimodal model
+        config: Training configuration
+        modality_lr_scales: Dict mapping modality names to LR scale factors.
+            E.g., {"audio": 0.5, "visual": 1.0} means audio gets half the base LR.
+            If None, all modalities use the same LR.
+    """
     opt_name = config["training"]["optimizer"]
-    lr = config["training"]["lr"]
+    base_lr = config["training"]["lr"]
     momentum = config["training"].get("momentum", 0.9)
     weight_decay = config["training"].get("weight_decay", 1e-4)
 
+    # Build parameter groups for per-modality LRs
+    if modality_lr_scales is not None:
+        param_groups = []
+
+        # Encoder parameters (per-modality LR)
+        for modality in model.modalities:
+            scale = modality_lr_scales.get(modality, 1.0)
+            param_groups.append({
+                'params': list(model.encoders[modality].parameters()),
+                'lr': base_lr * scale,
+                'name': f'encoder_{modality}',
+            })
+
+        # Fusion + classifier parameters (base LR)
+        fusion_params = (
+            list(model.fusion.parameters()) +
+            list(model.classifier.parameters()) +
+            list(model.unimodal_classifiers.parameters())
+        )
+        param_groups.append({
+            'params': fusion_params,
+            'lr': base_lr,
+            'name': 'fusion',
+        })
+
+        params = param_groups
+    else:
+        params = model.parameters()
+
     if opt_name == "sgd":
         return optim.SGD(
-            model.parameters(),
-            lr=lr,
+            params,
+            lr=base_lr,
             momentum=momentum,
             weight_decay=weight_decay,
         )
     elif opt_name == "adam":
         return optim.Adam(
-            model.parameters(),
-            lr=lr,
+            params,
+            lr=base_lr,
             weight_decay=weight_decay,
         )
     elif opt_name == "adamw":
         return optim.AdamW(
-            model.parameters(),
-            lr=lr,
+            params,
+            lr=base_lr,
             weight_decay=weight_decay,
         )
     else:
@@ -140,6 +183,8 @@ def train_epoch(
     config: dict,
     logger,
     writer: SummaryWriter = None,
+    scaler: GradScaler = None,
+    use_amp: bool = False,
 ):
     """
     Train for one epoch with ASGML.
@@ -167,24 +212,29 @@ def train_epoch(
     for batch_idx, batch in enumerate(pbar):
         global_step = (epoch - 1) * len(dataloader) + batch_idx
 
-        # Move data to device
-        inputs = {m: batch[m].to(device) for m in modalities}
-        targets = batch["label"].to(device)
+        # Move data to device (non_blocking for async transfer)
+        inputs = {m: batch[m].to(device, non_blocking=True) for m in modalities}
+        targets = batch["label"].to(device, non_blocking=True)
 
         # ========== Forward Pass ==========
         optimizer.zero_grad()
-        logits, unimodal_logits, features = model(inputs, return_features=True)
 
-        # Get update mask and staleness values from scheduler
-        update_mask = scheduler.get_update_mask()
+        with autocast(device_type='cuda', enabled=use_amp):
+            logits, unimodal_logits, features = model(inputs, return_features=True)
 
-        # ========== Compute Loss ==========
-        loss, loss_dict = loss_fn(
-            logits, unimodal_logits, targets, update_mask
-        )
+            # Get update mask and staleness values from scheduler
+            update_mask = scheduler.get_update_mask()
+
+            # ========== Compute Loss ==========
+            loss, loss_dict = loss_fn(
+                logits, unimodal_logits, targets, update_mask
+            )
 
         # ========== Backward Pass ==========
-        loss.backward()
+        if use_amp and scaler is not None:
+            scaler.scale(loss).backward()
+        else:
+            loss.backward()
 
         # ========== Compute Gradient Norms (for tracking) ==========
         grad_norms = compute_gradient_norms(model, modalities)
@@ -227,7 +277,11 @@ def train_epoch(
 
         # ========== Optimizer Step ==========
         # NOTE: Fusion head always updates regardless of modality schedules
-        optimizer.step()
+        if use_amp and scaler is not None:
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            optimizer.step()
 
         # ========== Update Scheduler ==========
         scheduler.dynamics.update(
@@ -360,6 +414,14 @@ def main():
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--device", type=str, default="cuda", help="Device to use")
     parser.add_argument("--output-dir", type=str, default="outputs", help="Output directory")
+    parser.add_argument("--amp", action="store_true", help="Use mixed precision training (AMP)")
+    parser.add_argument(
+        "--modality-lr",
+        type=str,
+        default=None,
+        help="Per-modality LR scales as 'modality:scale,...' (e.g., 'audio:0.5,visual:1.0')"
+    )
+    parser.add_argument("--epochs", type=int, default=None, help="Override epochs from config")
     args = parser.parse_args()
 
     # Load config
@@ -371,6 +433,18 @@ def main():
         config["asgml"]["enabled"] = False
     else:
         config["asgml"]["enabled"] = True
+
+    # Override epochs if specified
+    if args.epochs is not None:
+        config["training"]["epochs"] = args.epochs
+
+    # Parse per-modality LR scales
+    modality_lr_scales = None
+    if args.modality_lr:
+        modality_lr_scales = {}
+        for item in args.modality_lr.split(","):
+            modality, scale = item.split(":")
+            modality_lr_scales[modality.strip()] = float(scale)
 
     # Set seed
     set_seed(args.seed)
@@ -388,6 +462,8 @@ def main():
         "fixed_ratio": args.fixed_ratio,
         "fixed_staleness": args.fixed_staleness,
         "seed": args.seed,
+        "amp": args.amp,
+        "modality_lr_scales": modality_lr_scales,
     }
     with open(output_dir / "config.yaml", "w") as f:
         yaml.dump(config_copy, f)
@@ -446,8 +522,16 @@ def main():
     logger.info(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
 
     # Create optimizer and scheduler
-    optimizer = get_optimizer(model, config)
+    optimizer = get_optimizer(model, config, modality_lr_scales)
     lr_scheduler = get_scheduler(optimizer, config)
+
+    # Create AMP scaler if enabled
+    use_amp = args.amp and device.type == "cuda"
+    scaler = GradScaler('cuda') if use_amp else None
+    if use_amp:
+        logger.info("Mixed precision training (AMP) enabled")
+    if modality_lr_scales:
+        logger.info(f"Per-modality LR scales: {modality_lr_scales}")
 
     # Create ASGML components
     loss_fn = ASGMLLoss(
@@ -515,7 +599,8 @@ def main():
         # Train
         train_metrics = train_epoch(
             model, train_loader, optimizer, loss_fn, asgml_scheduler,
-            probe_manager, device, epoch, config, logger, writer
+            probe_manager, device, epoch, config, logger, writer,
+            scaler=scaler, use_amp=use_amp
         )
 
         # Evaluate
