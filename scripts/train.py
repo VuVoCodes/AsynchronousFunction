@@ -2,13 +2,27 @@
 """
 Training script for ASGML multimodal learning.
 
+Supports multiple experimental conditions:
+- Baseline: Standard joint training (all modalities update every step)
+- Fixed frequency: Dominant modality updates every k steps
+- Fixed staleness: Dominant modality uses τ-step-old gradients
+- Adaptive ASGML: Probe-driven staleness/frequency adaptation
+
 Usage:
-    python scripts/train.py --config configs/cremad.yaml
-    python scripts/train.py --config configs/cremad.yaml --no-asgml  # Baseline
+    # Baseline (no ASGML)
+    python scripts/train.py --config configs/cremad.yaml --mode baseline
+
+    # Fixed frequency (dominant updates every 2 steps)
+    python scripts/train.py --config configs/cremad.yaml --mode frequency --fixed-ratio 2
+
+    # Fixed staleness (dominant uses 2-step-old gradients)
+    python scripts/train.py --config configs/cremad.yaml --mode staleness --fixed-staleness 2
+
+    # Adaptive ASGML (full method)
+    python scripts/train.py --config configs/cremad.yaml --mode adaptive
 """
 
 import argparse
-import os
 import sys
 import yaml
 import random
@@ -26,10 +40,16 @@ from tqdm import tqdm
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.models import MultimodalModel
+from src.models import MultimodalModel, ProbeManager
 from src.datasets import CREMADDataset, AVEDataset, KineticsSoundsDataset
-from src.losses import ASGMLLoss
-from src.utils import setup_logger, AverageMeter, MetricTracker
+from src.losses import (
+    ASGMLLoss,
+    ASGMLScheduler,
+    compute_gradient_norms,
+    apply_staleness_gradients,
+)
+from src.utils import setup_logger, AverageMeter
+from src.utils.metrics import MetricTracker
 
 
 def set_seed(seed: int = 42):
@@ -108,106 +128,162 @@ def get_scheduler(optimizer, config: dict):
         raise ValueError(f"Unknown scheduler: {sched_name}")
 
 
-def compute_gradient_norms(model: nn.Module, modalities: list) -> dict:
-    """Compute gradient norms for each modality encoder."""
-    grad_norms = {}
-    for modality in modalities:
-        total_norm = 0.0
-        for p in model.encoders[modality].parameters():
-            if p.grad is not None:
-                total_norm += p.grad.data.norm(2).item() ** 2
-        grad_norms[modality] = total_norm ** 0.5
-    return grad_norms
-
-
 def train_epoch(
     model: nn.Module,
     dataloader: DataLoader,
     optimizer: optim.Optimizer,
-    asgml_loss: ASGMLLoss,
+    loss_fn: ASGMLLoss,
+    scheduler: ASGMLScheduler,
+    probe_manager: ProbeManager,
     device: torch.device,
     epoch: int,
     config: dict,
     logger,
     writer: SummaryWriter = None,
 ):
-    """Train for one epoch."""
+    """
+    Train for one epoch with ASGML.
+
+    This implements the full ASGML training loop:
+    1. Forward pass through model
+    2. Compute loss
+    3. Backward pass (compute gradients)
+    4. Store gradients in staleness buffer (if staleness mode)
+    5. Apply staleness/frequency mask to gradients
+    6. Optimizer step (fusion head always updates)
+    7. Periodically train and evaluate probes
+    """
     model.train()
 
     loss_meter = AverageMeter("Loss")
     metric_tracker = MetricTracker(config["evaluation"]["metrics"])
     modalities = config["dataset"]["modalities"]
 
+    eval_freq = config["asgml"].get("eval_freq", 100)
+    probe_train_steps = config["asgml"].get("probe_train_steps", 50)
+
     pbar = tqdm(dataloader, desc=f"Epoch {epoch}")
 
     for batch_idx, batch in enumerate(pbar):
+        global_step = (epoch - 1) * len(dataloader) + batch_idx
+
         # Move data to device
         inputs = {m: batch[m].to(device) for m in modalities}
         targets = batch["label"].to(device)
 
-        # Forward pass
+        # ========== Forward Pass ==========
         optimizer.zero_grad()
         logits, unimodal_logits, features = model(inputs, return_features=True)
 
-        # Compute gradient norms from previous step (for ASGML tracking)
-        # Note: On first batch, this will be zero
-        grad_norms = compute_gradient_norms(model, modalities)
+        # Get update mask and staleness values from scheduler
+        update_mask = scheduler.get_update_mask()
 
-        # Compute loss
-        if config["asgml"]["enabled"]:
-            loss, loss_info = asgml_loss(
-                logits, unimodal_logits, targets, grad_norms
-            )
-        else:
-            loss = nn.functional.cross_entropy(logits, targets)
-            loss_info = {"fusion_loss": loss.item()}
+        # ========== Compute Loss ==========
+        loss, loss_dict = loss_fn(
+            logits, unimodal_logits, targets, update_mask
+        )
 
-        # Backward pass
+        # ========== Backward Pass ==========
         loss.backward()
 
-        # Apply gradient scaling for ASGML
+        # ========== Compute Gradient Norms (for tracking) ==========
+        grad_norms = compute_gradient_norms(model, modalities)
+
+        # ========== Store Gradients (for staleness mode) ==========
+        if scheduler.mode == "staleness":
+            for m in modalities:
+                encoder_params = {
+                    name: param
+                    for name, param in model.named_parameters()
+                    if f"encoders.{m}" in name
+                }
+                scheduler.staleness_buffer.store_gradients(
+                    m, encoder_params, global_step
+                )
+
+        # ========== Apply ASGML Gradient Modifications ==========
         if config["asgml"]["enabled"]:
-            update_mask = asgml_loss.get_update_mask()
-            grad_scales = asgml_loss.get_gradient_scales()
+            if scheduler.mode == "staleness":
+                # Apply stale gradients for dominant modality
+                staleness_vals = scheduler.get_staleness_values()
+                grad_scales = scheduler.get_gradient_scales()
 
-            for modality in modalities:
-                if update_mask[modality]:
-                    scale = grad_scales[modality]
-                    for p in model.encoders[modality].parameters():
-                        if p.grad is not None:
-                            p.grad.data *= scale
-                else:
-                    # Zero out gradients for non-updating modalities
-                    for p in model.encoders[modality].parameters():
-                        if p.grad is not None:
-                            p.grad.data.zero_()
+                for m in modalities:
+                    if staleness_vals[m] > 0:
+                        apply_staleness_gradients(
+                            model,
+                            scheduler.staleness_buffer,
+                            m,
+                            staleness_vals[m],
+                            grad_scales[m],
+                        )
+            else:
+                # Frequency mode: zero out gradients for non-updating modalities
+                for m in modalities:
+                    if not update_mask[m]:
+                        for name, param in model.named_parameters():
+                            if f"encoders.{m}" in name and param.grad is not None:
+                                param.grad.data.zero_()
 
+        # ========== Optimizer Step ==========
+        # NOTE: Fusion head always updates regardless of modality schedules
         optimizer.step()
 
-        # Update metrics
+        # ========== Update Scheduler ==========
+        scheduler.dynamics.update(
+            {m: loss_dict[f'unimodal_{m}'].item() for m in modalities},
+            grad_norms,
+        )
+        scheduler.step()
+
+        # ========== Update Metrics ==========
         loss_meter.update(loss.item(), targets.size(0))
         metric_tracker.update(logits, targets)
 
-        # Update progress bar
-        pbar.set_postfix({"loss": f"{loss_meter.avg:.4f}"})
+        # ========== Probe Training & Evaluation (periodic) ==========
+        if (batch_idx + 1) % eval_freq == 0:
+            # Train probes on current features (DETACHED - safe)
+            probe_manager.train_probes(features, targets, num_steps=probe_train_steps)
 
-        # Log to tensorboard
-        if writer is not None and batch_idx % config["logging"]["log_interval"] == 0:
-            global_step = epoch * len(dataloader) + batch_idx
-            writer.add_scalar("train/loss", loss.item(), global_step)
+            # Evaluate probes
+            probe_results = probe_manager.evaluate_probes(features, targets)
+            utilization_gap = probe_manager.compute_utilization_gap()
+            dominant = probe_manager.get_dominant_modality()
 
-            if config["asgml"]["enabled"]:
+            # Update scheduler with probe signals (for adaptive mode)
+            if scheduler.adaptation == "adaptive" and utilization_gap is not None:
+                scheduler.set_dominant_modality(dominant)
+                scheduler.update_from_utilization(
+                    probe_manager.get_utilization_scores(),
+                    utilization_gap,
+                )
+
+            # Log probe metrics
+            if writer is not None:
                 for m in modalities:
                     writer.add_scalar(
-                        f"train/staleness_{m}",
-                        loss_info["staleness"][m],
+                        f"probe/accuracy_{m}",
+                        probe_results[m]['accuracy'],
                         global_step,
                     )
-                    writer.add_scalar(
-                        f"train/learning_speed_{m}",
-                        loss_info["learning_speeds"][m],
-                        global_step,
-                    )
+                if utilization_gap is not None:
+                    writer.add_scalar("probe/utilization_gap", utilization_gap, global_step)
+
+        # ========== Logging ==========
+        pbar.set_postfix({
+            "loss": f"{loss_meter.avg:.4f}",
+            "mask": str({m: int(v) for m, v in update_mask.items()}),
+        })
+
+        if writer is not None and batch_idx % config["logging"]["log_interval"] == 0:
+            writer.add_scalar("train/loss", loss.item(), global_step)
+            writer.add_scalar("train/fusion_loss", loss_dict['fusion'].item(), global_step)
+
+            for m in modalities:
+                writer.add_scalar(f"train/grad_norm_{m}", grad_norms[m], global_step)
+                writer.add_scalar(f"train/unimodal_loss_{m}", loss_dict[f'unimodal_{m}'].item(), global_step)
+                writer.add_scalar(f"train/staleness_{m}", scheduler.current_tau[m], global_step)
+                writer.add_scalar(f"train/update_{m}", int(update_mask[m]), global_step)
 
     # Compute epoch metrics
     metrics = metric_tracker.compute()
@@ -222,6 +298,7 @@ def evaluate(
     dataloader: DataLoader,
     device: torch.device,
     config: dict,
+    probe_manager: ProbeManager = None,
 ):
     """Evaluate model on dataset."""
     model.eval()
@@ -230,18 +307,40 @@ def evaluate(
     metric_tracker = MetricTracker(config["evaluation"]["metrics"])
     modalities = config["dataset"]["modalities"]
 
+    all_features = {m: [] for m in modalities}
+    all_targets = []
+
     for batch in tqdm(dataloader, desc="Evaluating"):
         inputs = {m: batch[m].to(device) for m in modalities}
         targets = batch["label"].to(device)
 
-        logits, _, _ = model(inputs, return_features=False)
+        logits, unimodal_logits, features = model(inputs, return_features=True)
         loss = nn.functional.cross_entropy(logits, targets)
 
         loss_meter.update(loss.item(), targets.size(0))
         metric_tracker.update(logits, targets)
 
+        # Collect features for probe evaluation
+        if probe_manager is not None:
+            for m in modalities:
+                all_features[m].append(features[m].cpu())
+            all_targets.append(targets.cpu())
+
     metrics = metric_tracker.compute()
     metrics["loss"] = loss_meter.avg
+
+    # Evaluate probes on full eval set
+    if probe_manager is not None and all_targets:
+        cat_features = {m: torch.cat(all_features[m], dim=0).to(device) for m in modalities}
+        cat_targets = torch.cat(all_targets, dim=0).to(device)
+
+        probe_results = probe_manager.evaluate_probes(cat_features, cat_targets)
+        for m in modalities:
+            metrics[f"probe_acc_{m}"] = probe_results[m]['accuracy']
+
+        utilization_gap = probe_manager.compute_utilization_gap()
+        if utilization_gap is not None:
+            metrics["utilization_gap"] = utilization_gap
 
     return metrics
 
@@ -249,7 +348,15 @@ def evaluate(
 def main():
     parser = argparse.ArgumentParser(description="Train ASGML model")
     parser.add_argument("--config", type=str, required=True, help="Path to config file")
-    parser.add_argument("--no-asgml", action="store_true", help="Disable ASGML (baseline)")
+    parser.add_argument(
+        "--mode",
+        type=str,
+        default="baseline",
+        choices=["baseline", "frequency", "staleness", "adaptive"],
+        help="Training mode",
+    )
+    parser.add_argument("--fixed-ratio", type=int, default=2, help="Fixed frequency ratio (for frequency mode)")
+    parser.add_argument("--fixed-staleness", type=int, default=2, help="Fixed staleness τ (for staleness mode)")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--device", type=str, default="cuda", help="Device to use")
     parser.add_argument("--output-dir", type=str, default="outputs", help="Output directory")
@@ -259,32 +366,40 @@ def main():
     with open(args.config, "r") as f:
         config = yaml.safe_load(f)
 
-    # Override ASGML setting if specified
-    if args.no_asgml:
+    # Configure ASGML based on mode
+    if args.mode == "baseline":
         config["asgml"]["enabled"] = False
+    else:
+        config["asgml"]["enabled"] = True
 
     # Set seed
     set_seed(args.seed)
 
     # Setup output directory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    exp_name = f"{config['dataset']['name']}_{'asgml' if config['asgml']['enabled'] else 'baseline'}_{timestamp}"
+    exp_name = f"{config['dataset']['name']}_{args.mode}_{timestamp}"
     output_dir = Path(args.output_dir) / exp_name
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Save config
+    config_copy = config.copy()
+    config_copy["experiment"] = {
+        "mode": args.mode,
+        "fixed_ratio": args.fixed_ratio,
+        "fixed_staleness": args.fixed_staleness,
+        "seed": args.seed,
+    }
     with open(output_dir / "config.yaml", "w") as f:
-        yaml.dump(config, f)
+        yaml.dump(config_copy, f)
 
     # Setup logger
     logger = setup_logger("asgml", log_file=str(output_dir / "train.log"))
     logger.info(f"Experiment: {exp_name}")
+    logger.info(f"Mode: {args.mode}")
     logger.info(f"Config: {config}")
 
     # Setup tensorboard
-    writer = None
-    if config["logging"]["tensorboard"]:
-        writer = SummaryWriter(log_dir=str(output_dir / "tensorboard"))
+    writer = SummaryWriter(log_dir=str(output_dir / "tensorboard"))
 
     # Setup device
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
@@ -313,13 +428,15 @@ def main():
         pin_memory=True,
     )
 
+    modalities = config["dataset"]["modalities"]
+
     # Create model
     model = MultimodalModel(
-        modalities=config["dataset"]["modalities"],
+        modalities=modalities,
         num_classes=config["dataset"]["num_classes"],
         encoder_config={
             m: {"backbone": config["model"]["backbone"], "pretrained": config["model"]["pretrained"]}
-            for m in config["dataset"]["modalities"]
+            for m in modalities
         },
         fusion_type=config["model"]["fusion_type"],
         feature_dim=config["model"]["feature_dim"],
@@ -330,52 +447,104 @@ def main():
 
     # Create optimizer and scheduler
     optimizer = get_optimizer(model, config)
-    scheduler = get_scheduler(optimizer, config)
+    lr_scheduler = get_scheduler(optimizer, config)
 
-    # Create ASGML loss
-    asgml_loss = ASGMLLoss(
-        modalities=config["dataset"]["modalities"],
-        tau_base=config["asgml"]["tau_base"],
-        tau_min=config["asgml"]["tau_min"],
-        tau_max=config["asgml"]["tau_max"],
-        beta=config["asgml"]["beta"],
-        lambda_comp=config["asgml"]["lambda_comp"],
+    # Create ASGML components
+    loss_fn = ASGMLLoss(
+        modalities=modalities,
         gamma=config["asgml"]["gamma"],
-        window_size=config["asgml"]["window_size"],
     )
+
+    # Configure ASGML scheduler based on mode
+    if args.mode == "baseline":
+        asgml_scheduler = ASGMLScheduler(
+            modalities=modalities,
+            mode="frequency",
+            adaptation="fixed",
+            fixed_ratio=1,  # Update every step = baseline
+        )
+    elif args.mode == "frequency":
+        asgml_scheduler = ASGMLScheduler(
+            modalities=modalities,
+            mode="frequency",
+            adaptation="fixed",
+            fixed_ratio=args.fixed_ratio,
+        )
+    elif args.mode == "staleness":
+        asgml_scheduler = ASGMLScheduler(
+            modalities=modalities,
+            mode="staleness",
+            adaptation="fixed",
+            fixed_staleness=args.fixed_staleness,
+        )
+    elif args.mode == "adaptive":
+        asgml_scheduler = ASGMLScheduler(
+            modalities=modalities,
+            mode=config["asgml"].get("asgml_mode", "frequency"),
+            adaptation="adaptive",
+            tau_base=config["asgml"]["tau_base"],
+            tau_min=config["asgml"]["tau_min"],
+            tau_max=config["asgml"]["tau_max"],
+            threshold_delta=config["asgml"].get("threshold_delta", 0.1),
+            beta=config["asgml"]["beta"],
+            lambda_comp=config["asgml"]["lambda_comp"],
+        )
+
+    # Create probe manager
+    probe_manager = ProbeManager(
+        modalities=modalities,
+        feature_dim=config["model"]["feature_dim"],
+        num_classes=config["dataset"]["num_classes"],
+        probe_type=config["asgml"].get("probe_type", "linear"),
+        probe_lr=config["asgml"].get("probe_lr", 1e-3),
+        device=device,
+    )
+
+    # Set initial dominant modality (will be updated by probes)
+    # For CREMA-D, audio is typically dominant
+    if "audio" in modalities:
+        asgml_scheduler.set_dominant_modality("audio")
 
     # Training loop
     best_acc = 0.0
     for epoch in range(1, config["training"]["epochs"] + 1):
-        # Reset ASGML state at start of epoch
-        asgml_loss.reset()
+        # Reset ASGML state at start of epoch (optional - can also persist)
+        # asgml_scheduler.reset()
 
         # Train
         train_metrics = train_epoch(
-            model, train_loader, optimizer, asgml_loss,
-            device, epoch, config, logger, writer
+            model, train_loader, optimizer, loss_fn, asgml_scheduler,
+            probe_manager, device, epoch, config, logger, writer
         )
 
         # Evaluate
-        test_metrics = evaluate(model, test_loader, device, config)
+        test_metrics = evaluate(model, test_loader, device, config, probe_manager)
 
-        # Update scheduler
-        if scheduler is not None:
-            scheduler.step()
+        # Update LR scheduler
+        if lr_scheduler is not None:
+            lr_scheduler.step()
 
         # Log
-        logger.info(
+        log_str = (
             f"Epoch {epoch}: "
             f"Train Loss={train_metrics['loss']:.4f}, "
             f"Train Acc={train_metrics['accuracy']:.4f}, "
             f"Test Acc={test_metrics['accuracy']:.4f}, "
             f"Test F1={test_metrics['f1_macro']:.4f}"
         )
+        if "utilization_gap" in test_metrics:
+            log_str += f", Util Gap={test_metrics['utilization_gap']:.4f}"
+        logger.info(log_str)
 
-        if writer is not None:
-            writer.add_scalar("test/accuracy", test_metrics["accuracy"], epoch)
-            writer.add_scalar("test/f1_macro", test_metrics["f1_macro"], epoch)
-            writer.add_scalar("test/loss", test_metrics["loss"], epoch)
+        # Tensorboard logging
+        writer.add_scalar("test/accuracy", test_metrics["accuracy"], epoch)
+        writer.add_scalar("test/f1_macro", test_metrics["f1_macro"], epoch)
+        writer.add_scalar("test/loss", test_metrics["loss"], epoch)
+        if "utilization_gap" in test_metrics:
+            writer.add_scalar("test/utilization_gap", test_metrics["utilization_gap"], epoch)
+        for m in modalities:
+            if f"probe_acc_{m}" in test_metrics:
+                writer.add_scalar(f"test/probe_acc_{m}", test_metrics[f"probe_acc_{m}"], epoch)
 
         # Save checkpoint
         if test_metrics["accuracy"] > best_acc:
@@ -384,8 +553,9 @@ def main():
                 "epoch": epoch,
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
+                "probe_manager_state": probe_manager.state_dict(),
                 "best_acc": best_acc,
-                "config": config,
+                "config": config_copy,
             }, output_dir / "best_model.pt")
             logger.info(f"New best model saved with accuracy: {best_acc:.4f}")
 
@@ -395,14 +565,12 @@ def main():
                 "epoch": epoch,
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
-                "config": config,
+                "config": config_copy,
             }, output_dir / f"checkpoint_epoch{epoch}.pt")
 
     # Final summary
     logger.info(f"Training complete. Best accuracy: {best_acc:.4f}")
-
-    if writer is not None:
-        writer.close()
+    writer.close()
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 # AVE Dataset Configuration
 # Audio-visual event localization (28 classes)
+# Audio is typically the dominant modality
 
 # Dataset
 dataset:
@@ -36,21 +37,38 @@ training:
 # ASGML hyperparameters
 asgml:
   enabled: true
+
+  # Mode settings
+  asgml_mode: frequency
+
+  # Staleness/frequency bounds
   tau_base: 2.0
   tau_min: 1.0
   tau_max: 4.0  # As per ARL paper (T=4)
+
+  # Signal weighting
   beta: 0.5
+
+  # Gradient compensation
   lambda_comp: 0.1
+
+  # Unimodal regularization weight
   gamma: 4.0
-  window_size: 10
+
+  # Adaptive mode threshold
+  threshold_delta: 0.1
+
+  # Probe settings
+  probe_type: linear
+  probe_lr: 0.001
+  eval_freq: 100
+  probe_train_steps: 50
 
 # Logging
 logging:
   log_interval: 20
   save_interval: 10
   tensorboard: true
-  wandb: false
-  project_name: asgml
 
 # Evaluation
 evaluation:

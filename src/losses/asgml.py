@@ -1,11 +1,22 @@
 """
-Asynchronous Staleness Guided Multimodal Learning (ASGML) Loss Function.
+Asynchronous Staleness Guided Multimodal Learning (ASGML) Loss and Scheduler.
 
-This module implements the core ASGML mechanism:
-1. Monitor learning speed via gradient magnitude and loss descent rate
-2. Compute adaptive staleness thresholds per modality
-3. Determine which modalities update at each step
-4. Apply gradient compensation for stale updates
+This module implements the core ASGML mechanism with two modes:
+
+1. FREQUENCY MODE (simpler):
+   - Dominant modality updates every k steps (k > 1)
+   - Weak modality updates every step
+   - Gradients are always computed at current parameters
+
+2. STALENESS MODE (full contribution):
+   - Dominant modality uses gradients computed τ steps ago
+   - Gradients are stored in staleness buffer and applied with delay
+   - Provides implicit regularization effect
+
+CRITICAL SAFETY RULES:
+- Staleness buffer is managed separately from optimizer state
+- Fusion head ALWAYS updates every step regardless of modality schedules
+- Probe signals drive adaptation but probes never backprop into encoders
 """
 
 import torch
@@ -15,13 +26,113 @@ from typing import Dict, List, Optional, Tuple
 from collections import deque
 
 
-class LearningSpeedTracker:
+class StalenessBuffer:
     """
-    Tracks learning speed signals for each modality.
+    Buffer for storing gradient snapshots to enable true staleness.
 
-    Monitors:
-    - Gradient magnitude ratios (instantaneous)
-    - Loss descent rates (temporal, over window of k steps)
+    True staleness means applying gradients computed at old parameters
+    to current parameters:
+        θ_{t+τ+1} = θ_{t+τ} - η ∇_{θ_t} L
+
+    This is different from reduced frequency which uses fresh gradients
+    applied less often:
+        θ_{t+1} = θ_t - η ∇_{θ_t} L  (but only every k steps)
+    """
+
+    def __init__(self, modalities: List[str], max_staleness: int = 8):
+        """
+        Args:
+            modalities: List of modality names
+            max_staleness: Maximum staleness τ (buffer size per modality)
+        """
+        self.modalities = modalities
+        self.max_staleness = max_staleness
+
+        # Buffer stores gradient dicts keyed by step
+        # Each entry: {param_name: grad_tensor}
+        self.buffers: Dict[str, deque] = {
+            m: deque(maxlen=max_staleness) for m in modalities
+        }
+
+        # Track which step each gradient was computed at
+        self.step_indices: Dict[str, deque] = {
+            m: deque(maxlen=max_staleness) for m in modalities
+        }
+
+    def store_gradients(
+        self,
+        modality: str,
+        parameters: Dict[str, nn.Parameter],
+        step: int,
+    ) -> None:
+        """
+        Store current gradients for a modality.
+
+        Args:
+            modality: Modality name
+            parameters: Dict of named parameters (from model.named_parameters())
+            step: Current training step
+        """
+        grad_snapshot = {}
+        for name, param in parameters.items():
+            if param.grad is not None:
+                # Clone and detach to create independent copy
+                grad_snapshot[name] = param.grad.clone().detach()
+
+        self.buffers[modality].append(grad_snapshot)
+        self.step_indices[modality].append(step)
+
+    def get_stale_gradients(
+        self,
+        modality: str,
+        staleness: int,
+    ) -> Optional[Dict[str, torch.Tensor]]:
+        """
+        Retrieve gradients from τ steps ago.
+
+        Args:
+            modality: Modality name
+            staleness: How many steps old the gradient should be (τ)
+
+        Returns:
+            Dict of gradients, or None if not enough history
+        """
+        buffer = self.buffers[modality]
+
+        if len(buffer) < staleness:
+            return None
+
+        # Get gradient from staleness steps ago
+        # Index -staleness gives us the gradient from τ steps back
+        idx = -staleness
+        if abs(idx) <= len(buffer):
+            return buffer[idx]
+        return None
+
+    def clear(self, modality: Optional[str] = None) -> None:
+        """Clear buffer for one or all modalities."""
+        if modality is not None:
+            self.buffers[modality].clear()
+            self.step_indices[modality].clear()
+        else:
+            for m in self.modalities:
+                self.buffers[m].clear()
+                self.step_indices[m].clear()
+
+    def __len__(self) -> int:
+        """Return minimum buffer length across modalities."""
+        return min(len(b) for b in self.buffers.values())
+
+
+class LearningDynamicsTracker:
+    """
+    Tracks learning dynamics signals for adaptive staleness/frequency.
+
+    Two signals are monitored:
+    1. Gradient magnitude ratio: instantaneous dominance signal
+    2. Loss descent rate: temporal learning speed signal
+
+    These signals determine which modality is dominant and by how much.
     """
 
     def __init__(
@@ -29,52 +140,79 @@ class LearningSpeedTracker:
         modalities: List[str],
         window_size: int = 10,
         beta: float = 0.5,
+        ema_alpha: float = 0.1,
     ):
         """
         Args:
             modalities: List of modality names
             window_size: Number of steps for loss descent calculation
-            beta: Weight for combining gradient vs loss signals
+            beta: Weight for combining gradient (β) vs loss (1-β) signals
+            ema_alpha: EMA smoothing factor for gradient norms
         """
         self.modalities = modalities
         self.window_size = window_size
         self.beta = beta
+        self.ema_alpha = ema_alpha
 
-        # Loss history for each modality
+        # Loss history for descent rate
         self.loss_history: Dict[str, deque] = {
             m: deque(maxlen=window_size) for m in modalities
         }
 
-        # Gradient norm history (for smoothing)
-        self.grad_norm_history: Dict[str, deque] = {
-            m: deque(maxlen=5) for m in modalities
-        }
+        # EMA of gradient norms (more stable than raw values)
+        self.grad_norm_ema: Dict[str, float] = {m: 0.0 for m in modalities}
+
+        # Track if we have enough data
+        self.steps_tracked = 0
 
     def update(
         self,
         losses: Dict[str, float],
         grad_norms: Dict[str, float],
     ) -> None:
-        """Update history with current step's losses and gradient norms."""
+        """
+        Update tracking with current step's losses and gradient norms.
+
+        Args:
+            losses: Dict mapping modality names to loss values
+            grad_norms: Dict mapping modality names to gradient L2 norms
+        """
         for m in self.modalities:
-            self.loss_history[m].append(losses.get(m, 0.0))
-            self.grad_norm_history[m].append(grad_norms.get(m, 0.0))
+            # Update loss history
+            if m in losses:
+                self.loss_history[m].append(losses[m])
+
+            # Update gradient norm EMA
+            if m in grad_norms:
+                old_ema = self.grad_norm_ema[m]
+                new_val = grad_norms[m]
+                self.grad_norm_ema[m] = (
+                    self.ema_alpha * new_val + (1 - self.ema_alpha) * old_ema
+                )
+
+        self.steps_tracked += 1
 
     def compute_learning_speed(self) -> Dict[str, float]:
         """
         Compute learning speed score for each modality.
 
+        Score > 1: modality is learning faster than average (dominant)
+        Score < 1: modality is learning slower than average (weak)
+        Score = 1: modality is at average pace
+
         Returns:
-            Dictionary mapping modality names to learning speed scores.
-            Score > 1 means faster than average, < 1 means slower.
+            Dict mapping modality names to learning speed scores
         """
+        if self.steps_tracked < 2:
+            return {m: 1.0 for m in self.modalities}
+
         # Compute gradient magnitude ratios
         grad_ratios = self._compute_gradient_ratios()
 
         # Compute loss descent ratios
         loss_ratios = self._compute_loss_descent_ratios()
 
-        # Combine signals
+        # Combine with weighting β
         learning_speeds = {}
         for m in self.modalities:
             g_ratio = grad_ratios.get(m, 1.0)
@@ -84,141 +222,280 @@ class LearningSpeedTracker:
         return learning_speeds
 
     def _compute_gradient_ratios(self) -> Dict[str, float]:
-        """Compute gradient magnitude relative to mean."""
-        # Get smoothed gradient norms
-        grad_norms = {
-            m: sum(self.grad_norm_history[m]) / max(len(self.grad_norm_history[m]), 1)
-            for m in self.modalities
-        }
+        """Compute gradient magnitude relative to mean across modalities."""
+        emas = self.grad_norm_ema
+        mean_norm = sum(emas.values()) / max(len(emas), 1)
 
-        mean_norm = sum(grad_norms.values()) / max(len(grad_norms), 1)
         if mean_norm < 1e-8:
             return {m: 1.0 for m in self.modalities}
 
-        return {m: norm / mean_norm for m, norm in grad_norms.items()}
+        return {m: emas[m] / mean_norm for m in self.modalities}
 
     def _compute_loss_descent_ratios(self) -> Dict[str, float]:
-        """Compute loss descent rate relative to mean."""
+        """Compute loss descent rate relative to mean across modalities."""
         descents = {}
         for m in self.modalities:
             history = list(self.loss_history[m])
             if len(history) < 2:
                 descents[m] = 0.0
             else:
-                # Loss descent = first - last (positive means decreasing loss)
+                # Descent = first - last (positive = loss decreasing = learning)
                 descents[m] = max(history[0] - history[-1], 0.0)
 
         mean_descent = sum(descents.values()) / max(len(descents), 1)
+
         if mean_descent < 1e-8:
             return {m: 1.0 for m in self.modalities}
 
         return {m: d / mean_descent for m, d in descents.items()}
 
+    def get_dominant_modality(self) -> Optional[str]:
+        """Return modality with highest learning speed."""
+        speeds = self.compute_learning_speed()
+        if not speeds:
+            return None
+        return max(speeds, key=speeds.get)
+
     def reset(self) -> None:
-        """Reset all history."""
+        """Reset all tracking state."""
         for m in self.modalities:
             self.loss_history[m].clear()
-            self.grad_norm_history[m].clear()
+            self.grad_norm_ema[m] = 0.0
+        self.steps_tracked = 0
 
 
-class ASGMLLoss(nn.Module):
+class ASGMLScheduler:
     """
-    ASGML Loss Function with adaptive staleness control.
+    Schedules modality updates based on learning dynamics.
 
-    Combines:
-    - Multimodal fusion loss
-    - Unimodal regularization losses (applied conditionally)
-    - Adaptive staleness-based update decisions
+    Supports two modes:
+    - FREQUENCY: Skip updates for dominant modality (every k steps)
+    - STALENESS: Apply stale gradients to dominant modality
+
+    The scheduler can be:
+    - FIXED: Use predetermined ratios/staleness values
+    - ADAPTIVE: Adjust based on probe signals or learning dynamics
     """
 
     def __init__(
         self,
         modalities: List[str],
-        tau_base: float = 2.0,
+        mode: str = "frequency",  # "frequency" or "staleness"
+        adaptation: str = "fixed",  # "fixed" or "adaptive"
+        # Fixed mode parameters
+        fixed_ratio: int = 2,  # Dominant updates every `fixed_ratio` steps
+        fixed_staleness: int = 2,  # Staleness τ for dominant modality
+        # Adaptive mode parameters
+        tau_base: float = 1.0,
         tau_min: float = 1.0,
-        tau_max: float = 5.0,
+        tau_max: float = 8.0,
+        threshold_delta: float = 0.1,  # Utilization gap threshold
+        # General
         beta: float = 0.5,
-        lambda_comp: float = 0.1,
-        gamma: float = 1.0,
-        window_size: int = 10,
+        lambda_comp: float = 0.1,  # Gradient compensation factor
     ):
         """
         Args:
             modalities: List of modality names
-            tau_base: Baseline staleness threshold
-            tau_min: Minimum staleness (1 = update every step)
-            tau_max: Maximum staleness bound
-            beta: Weight for gradient vs loss descent signals
-            lambda_comp: Gradient compensation factor
-            gamma: Unimodal regularization weight
-            window_size: Window size for loss descent computation
+            mode: "frequency" (skip updates) or "staleness" (use old gradients)
+            adaptation: "fixed" (predetermined) or "adaptive" (probe-driven)
+            fixed_ratio: For fixed frequency mode, update dominant every k steps
+            fixed_staleness: For fixed staleness mode, use τ-step-old gradients
+            tau_base: Baseline for adaptive staleness computation
+            tau_min: Minimum staleness/frequency (1 = update every step)
+            tau_max: Maximum staleness/frequency bound
+            threshold_delta: Utilization gap that triggers adaptation
+            beta: Weight for gradient vs loss signals in dynamics tracking
+            lambda_comp: Gradient scaling compensation factor
         """
-        super().__init__()
         self.modalities = modalities
+        self.mode = mode
+        self.adaptation = adaptation
+        self.fixed_ratio = fixed_ratio
+        self.fixed_staleness = fixed_staleness
         self.tau_base = tau_base
         self.tau_min = tau_min
         self.tau_max = tau_max
+        self.threshold_delta = threshold_delta
         self.lambda_comp = lambda_comp
-        self.gamma = gamma
 
-        # Learning speed tracker
-        self.tracker = LearningSpeedTracker(
+        # Current staleness/frequency values per modality
+        self.current_tau: Dict[str, float] = {m: 1.0 for m in modalities}
+
+        # Learning dynamics tracker
+        self.dynamics = LearningDynamicsTracker(
             modalities=modalities,
-            window_size=window_size,
             beta=beta,
         )
 
-        # Current staleness values
-        self.staleness: Dict[str, float] = {m: 1.0 for m in modalities}
+        # Staleness buffer (only used in staleness mode)
+        self.staleness_buffer = StalenessBuffer(
+            modalities=modalities,
+            max_staleness=int(tau_max) + 2,
+        )
 
         # Step counter
         self.current_step = 0
 
-    def compute_staleness(self) -> Dict[str, float]:
-        """Compute adaptive staleness thresholds based on learning speeds."""
-        learning_speeds = self.tracker.compute_learning_speed()
+        # Cache dominant modality (updated by external probe signals)
+        self._dominant_modality: Optional[str] = None
 
-        staleness = {}
+    def set_dominant_modality(self, modality: str) -> None:
+        """
+        Set which modality is dominant (from probe signals).
+
+        In adaptive mode, this is called with probe evaluation results.
+        """
+        self._dominant_modality = modality
+
+    def update_from_utilization(
+        self,
+        utilization_scores: Dict[str, float],
+        utilization_gap: float,
+    ) -> None:
+        """
+        Update staleness values based on probe utilization signals.
+
+        Args:
+            utilization_scores: Probe accuracy per modality
+            utilization_gap: Max - min probe accuracy
+        """
+        if self.adaptation != "adaptive":
+            return
+
+        if utilization_gap < self.threshold_delta:
+            # Gap is small, no need for strong intervention
+            self.current_tau = {m: self.tau_min for m in self.modalities}
+            return
+
+        # Scale tau based on utilization - higher utilization = higher staleness
+        mean_util = sum(utilization_scores.values()) / len(utilization_scores)
+
         for m in self.modalities:
-            # Higher learning speed -> higher staleness (fewer updates)
-            raw_tau = self.tau_base * learning_speeds[m]
-            staleness[m] = max(self.tau_min, min(self.tau_max, raw_tau))
-
-        self.staleness = staleness
-        return staleness
+            relative_util = utilization_scores[m] / max(mean_util, 1e-8)
+            raw_tau = self.tau_base * relative_util
+            self.current_tau[m] = max(self.tau_min, min(self.tau_max, raw_tau))
 
     def get_update_mask(self) -> Dict[str, bool]:
         """
-        Determine which modalities should update at current step.
+        Determine which modalities should update their encoders this step.
+
+        In frequency mode: dominant modality skips some steps
+        In staleness mode: all modalities "update" but dominant uses stale grads
 
         Returns:
-            Dictionary mapping modality names to update decisions.
+            Dict mapping modality names to whether they should update
         """
+        if self.mode == "staleness":
+            # In staleness mode, all modalities always update
+            # (but dominant uses stale gradients - handled separately)
+            return {m: True for m in self.modalities}
+
+        # Frequency mode: check if each modality should update
         update_mask = {}
         for m in self.modalities:
-            tau = int(round(self.staleness[m]))
-            update_mask[m] = (self.current_step % tau) == 0
+            if self.adaptation == "fixed":
+                # Fixed frequency: dominant updates every fixed_ratio steps
+                if m == self._dominant_modality:
+                    update_mask[m] = (self.current_step % self.fixed_ratio) == 0
+                else:
+                    update_mask[m] = True
+            else:
+                # Adaptive frequency: use current_tau
+                tau = int(round(self.current_tau[m]))
+                update_mask[m] = (self.current_step % max(tau, 1)) == 0
+
         return update_mask
+
+    def get_staleness_values(self) -> Dict[str, int]:
+        """
+        Get staleness τ for each modality (for staleness mode).
+
+        Returns:
+            Dict mapping modality names to staleness values
+        """
+        if self.mode != "staleness":
+            return {m: 0 for m in self.modalities}
+
+        staleness = {}
+        for m in self.modalities:
+            if self.adaptation == "fixed":
+                if m == self._dominant_modality:
+                    staleness[m] = self.fixed_staleness
+                else:
+                    staleness[m] = 0  # Fresh gradients
+            else:
+                staleness[m] = int(round(self.current_tau[m])) - 1  # τ-1 steps old
+
+        return staleness
 
     def get_gradient_scales(self) -> Dict[str, float]:
         """
         Compute gradient scaling factors for staleness compensation.
 
+        When using stale gradients, we may want to scale them to
+        compensate for the delay.
+
         Returns:
-            Dictionary mapping modality names to gradient scale factors.
+            Dict mapping modality names to gradient scale factors
         """
         scales = {}
+        staleness_vals = self.get_staleness_values()
+
         for m in self.modalities:
-            scales[m] = 1.0 + self.lambda_comp * self.staleness[m]
+            tau = staleness_vals.get(m, 0)
+            # Scale = 1 + λ * τ (compensate for missed updates)
+            scales[m] = 1.0 + self.lambda_comp * tau
+
         return scales
+
+    def step(self) -> None:
+        """Increment step counter (call at end of each training step)."""
+        self.current_step += 1
+
+    def reset(self) -> None:
+        """Reset scheduler state (call at start of training)."""
+        self.current_step = 0
+        self.current_tau = {m: 1.0 for m in self.modalities}
+        self.dynamics.reset()
+        self.staleness_buffer.clear()
+        self._dominant_modality = None
+
+
+class ASGMLLoss(nn.Module):
+    """
+    ASGML Loss Function wrapper.
+
+    This computes the multimodal loss and provides integration with
+    the ASGML scheduler for determining update masks and staleness.
+
+    Loss = L_fusion + γ * Σ_i (L_unimodal_i * 𝟙[update_i])
+
+    The unimodal regularization terms are only applied when the
+    corresponding modality updates.
+    """
+
+    def __init__(
+        self,
+        modalities: List[str],
+        gamma: float = 4.0,  # Unimodal regularization weight (matching ARL)
+    ):
+        """
+        Args:
+            modalities: List of modality names
+            gamma: Weight for unimodal regularization terms
+        """
+        super().__init__()
+        self.modalities = modalities
+        self.gamma = gamma
 
     def forward(
         self,
         fusion_logits: torch.Tensor,
         unimodal_logits: Dict[str, torch.Tensor],
         targets: torch.Tensor,
-        grad_norms: Optional[Dict[str, float]] = None,
-    ) -> Tuple[torch.Tensor, Dict[str, any]]:
+        update_mask: Optional[Dict[str, bool]] = None,
+    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """
         Compute ASGML loss.
 
@@ -226,32 +503,24 @@ class ASGMLLoss(nn.Module):
             fusion_logits: Fused prediction logits (B, num_classes)
             unimodal_logits: Dict of unimodal logits per modality
             targets: Ground truth labels (B,)
-            grad_norms: Optional gradient norms from previous step
+            update_mask: Which modalities are updating (for conditional reg)
 
         Returns:
             total_loss: Combined loss value
-            info: Dictionary with debugging/logging information
+            loss_dict: Dict with individual loss components
         """
-        # Compute fusion loss (always applied)
+        # Fusion loss (always computed)
         fusion_loss = F.cross_entropy(fusion_logits, targets)
 
-        # Compute unimodal losses
+        # Unimodal losses
         unimodal_losses = {}
         for m in self.modalities:
             unimodal_losses[m] = F.cross_entropy(unimodal_logits[m], targets)
 
-        # Update tracker with current losses
-        loss_dict = {m: unimodal_losses[m].item() for m in self.modalities}
-        if grad_norms is not None:
-            self.tracker.update(loss_dict, grad_norms)
+        # Compute regularization (conditional on update mask)
+        if update_mask is None:
+            update_mask = {m: True for m in self.modalities}
 
-        # Compute adaptive staleness
-        staleness = self.compute_staleness()
-
-        # Get update mask
-        update_mask = self.get_update_mask()
-
-        # Compute total unimodal regularization (only for updating modalities)
         unimodal_reg = torch.tensor(0.0, device=fusion_logits.device)
         for m in self.modalities:
             if update_mask[m]:
@@ -260,23 +529,85 @@ class ASGMLLoss(nn.Module):
         # Total loss
         total_loss = fusion_loss + self.gamma * unimodal_reg
 
-        # Increment step
-        self.current_step += 1
-
-        # Gather info for logging
-        info = {
-            "fusion_loss": fusion_loss.item(),
-            "unimodal_losses": {m: unimodal_losses[m].item() for m in self.modalities},
-            "staleness": staleness,
-            "update_mask": update_mask,
-            "gradient_scales": self.get_gradient_scales(),
-            "learning_speeds": self.tracker.compute_learning_speed(),
+        # Collect all losses for logging
+        loss_dict = {
+            'fusion': fusion_loss,
+            'unimodal_reg': unimodal_reg,
+            'total': total_loss,
         }
+        for m in self.modalities:
+            loss_dict[f'unimodal_{m}'] = unimodal_losses[m]
 
-        return total_loss, info
+        return total_loss, loss_dict
 
-    def reset(self) -> None:
-        """Reset loss function state (call at start of each epoch)."""
-        self.current_step = 0
-        self.staleness = {m: 1.0 for m in self.modalities}
-        self.tracker.reset()
+
+def compute_gradient_norms(
+    model: nn.Module,
+    modalities: List[str],
+    encoder_prefix: str = "encoders",
+) -> Dict[str, float]:
+    """
+    Compute gradient L2 norms for each modality encoder.
+
+    Args:
+        model: The multimodal model
+        modalities: List of modality names
+        encoder_prefix: Prefix for encoder parameters in model
+
+    Returns:
+        Dict mapping modality names to gradient norms
+    """
+    grad_norms = {}
+
+    for modality in modalities:
+        total_norm = 0.0
+        count = 0
+
+        for name, param in model.named_parameters():
+            if f"{encoder_prefix}.{modality}" in name and param.grad is not None:
+                total_norm += param.grad.data.norm(2).item() ** 2
+                count += 1
+
+        grad_norms[modality] = (total_norm ** 0.5) if count > 0 else 0.0
+
+    return grad_norms
+
+
+def apply_staleness_gradients(
+    model: nn.Module,
+    staleness_buffer: StalenessBuffer,
+    modality: str,
+    staleness: int,
+    scale: float = 1.0,
+    encoder_prefix: str = "encoders",
+) -> bool:
+    """
+    Replace current gradients with stale gradients from buffer.
+
+    CRITICAL: This modifies gradients in-place before optimizer.step()
+
+    Args:
+        model: The multimodal model
+        staleness_buffer: Buffer containing stored gradients
+        modality: Which modality to apply stale gradients to
+        staleness: How many steps old the gradients should be
+        scale: Gradient scaling factor for compensation
+        encoder_prefix: Prefix for encoder parameters
+
+    Returns:
+        True if stale gradients were applied, False otherwise
+    """
+    if staleness <= 0:
+        return False
+
+    stale_grads = staleness_buffer.get_stale_gradients(modality, staleness)
+    if stale_grads is None:
+        return False
+
+    # Apply stale gradients to encoder parameters
+    for name, param in model.named_parameters():
+        if f"{encoder_prefix}.{modality}" in name:
+            if name in stale_grads and param.grad is not None:
+                param.grad.data = stale_grads[name].to(param.device) * scale
+
+    return True

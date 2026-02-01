@@ -1,5 +1,6 @@
 # CREMA-D Dataset Configuration
 # Audio-visual emotion recognition (6 classes)
+# Audio is typically the dominant modality
 
 # Dataset
 dataset:
@@ -36,21 +37,38 @@ training:
 # ASGML hyperparameters
 asgml:
   enabled: true
+
+  # Mode settings
+  asgml_mode: frequency  # "frequency" or "staleness" (for adaptive mode)
+
+  # Staleness/frequency bounds
   tau_base: 2.0
   tau_min: 1.0
   tau_max: 8.0  # Higher for CREMA-D as per ARL paper (T=8)
-  beta: 0.5
+
+  # Signal weighting
+  beta: 0.5  # Weight for gradient magnitude (1-β for loss descent)
+
+  # Gradient compensation
   lambda_comp: 0.1
-  gamma: 4.0  # Unimodal reg weight (matching ARL)
-  window_size: 10
+
+  # Unimodal regularization weight (matching ARL γ=4)
+  gamma: 4.0
+
+  # Adaptive mode threshold
+  threshold_delta: 0.1  # Utilization gap threshold to trigger adaptation
+
+  # Probe settings
+  probe_type: linear  # "linear" or "mlp_1layer"
+  probe_lr: 0.001
+  eval_freq: 100  # Evaluate probes every N batches
+  probe_train_steps: 50  # Steps to train probe per evaluation
 
 # Logging
 logging:
   log_interval: 20
   save_interval: 10
   tensorboard: true
-  wandb: false
-  project_name: asgml
 
 # Evaluation
 evaluation:
