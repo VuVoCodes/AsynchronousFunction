@@ -1,7 +1,6 @@
 .claude/
 # /CLAUDE.md
 # *.claude.md
-CLAUDE_BACKUP.md
 asgml.egg-info/
 data/
 **/__pycache__/
