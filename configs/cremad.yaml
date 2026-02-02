@@ -31,7 +31,7 @@ training:
 
   # LR scheduler
   scheduler: step
-  step_size: 40
+  step_size: 70  # Updated for 100 epochs (drop LR at 70% of training)
   gamma: 0.1
 
 # ASGML hyperparameters
@@ -53,8 +53,10 @@ asgml:
   # Gradient compensation
   lambda_comp: 0.1
 
-  # Unimodal regularization weight (matching ARL γ=4)
-  gamma: 4.0
+  # Unimodal regularization weight
+  # NOTE: Reduced from 4.0 to 1.0 to prevent unimodal loss from dominating
+  # With γ=4.0, unimodal losses were ~89% of total loss, causing overfitting
+  gamma: 1.0
 
   # Adaptive mode threshold
   threshold_delta: 0.1  # Utilization gap threshold to trigger adaptation

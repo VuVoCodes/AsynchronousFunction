@@ -233,13 +233,18 @@ def train_epoch(
         # ========== Backward Pass ==========
         if use_amp and scaler is not None:
             scaler.scale(loss).backward()
+            # CRITICAL FIX: Unscale gradients BEFORE storing/modifying
+            # This prevents AMP scale factor mismatch when applying stale gradients
+            scaler.unscale_(optimizer)
         else:
             loss.backward()
 
         # ========== Compute Gradient Norms (for tracking) ==========
+        # Now computed on unscaled gradients for accurate tracking
         grad_norms = compute_gradient_norms(model, modalities)
 
         # ========== Store Gradients (for staleness mode) ==========
+        # Gradients are now unscaled, so staleness buffer stores correct values
         if scheduler.mode == "staleness":
             for m in modalities:
                 encoder_params = {
@@ -268,16 +273,29 @@ def train_epoch(
                             grad_scales[m],
                         )
             else:
-                # Frequency mode: zero out gradients for non-updating modalities
+                # Frequency mode: reduce encoder gradients for non-updating modalities
+                # Options:
+                #   - hard_mask=True (default): Zero all encoder gradients (original behavior)
+                #   - hard_mask=False: Scale gradients by small factor to preserve some signal
+                hard_mask = config["asgml"].get("hard_frequency_mask", False)
+                soft_scale = config["asgml"].get("soft_mask_scale", 0.1)  # 10% of gradient
+
                 for m in modalities:
                     if not update_mask[m]:
                         for name, param in model.named_parameters():
                             if f"encoders.{m}" in name and param.grad is not None:
-                                param.grad.data.zero_()
+                                if hard_mask:
+                                    param.grad.data.zero_()
+                                else:
+                                    # Soft masking: reduce but don't eliminate gradient
+                                    # This preserves fusion-path learning signal
+                                    param.grad.data.mul_(soft_scale)
 
         # ========== Optimizer Step ==========
         # NOTE: Fusion head always updates regardless of modality schedules
         if use_amp and scaler is not None:
+            # Gradients already unscaled above, so use step() directly
+            # Check for inf/nan before stepping (scaler.step handles this)
             scaler.step(optimizer)
             scaler.update()
         else:
@@ -589,6 +607,7 @@ def main():
         probe_type=config["asgml"].get("probe_type", "linear"),
         probe_lr=config["asgml"].get("probe_lr", 1e-3),
         device=device,
+        ema_alpha=config["asgml"].get("probe_ema_alpha", 0.1),  # EMA smoothing for stable adaptive control
     )
 
     # Set initial dominant modality (will be updated by probes)

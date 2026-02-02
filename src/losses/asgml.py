@@ -232,15 +232,26 @@ class LearningDynamicsTracker:
         return {m: emas[m] / mean_norm for m in self.modalities}
 
     def _compute_loss_descent_ratios(self) -> Dict[str, float]:
-        """Compute loss descent rate relative to mean across modalities."""
+        """
+        Compute loss descent rate relative to mean across modalities.
+
+        Positive descent = loss decreasing = learning
+        Negative descent = loss increasing = possibly overfitting
+
+        We use absolute value of descent to capture learning activity
+        regardless of direction. A modality with increasing loss is still
+        "active" and shouldn't have its signal zeroed out.
+        """
         descents = {}
         for m in self.modalities:
             history = list(self.loss_history[m])
             if len(history) < 2:
                 descents[m] = 0.0
             else:
-                # Descent = first - last (positive = loss decreasing = learning)
-                descents[m] = max(history[0] - history[-1], 0.0)
+                # Use absolute descent to capture learning activity
+                # This preserves signal even when loss is increasing (overfitting phase)
+                raw_descent = history[0] - history[-1]
+                descents[m] = abs(raw_descent)
 
         mean_descent = sum(descents.values()) / max(len(descents), 1)
 
@@ -446,8 +457,14 @@ class ASGMLScheduler:
         """
         Compute gradient scaling factors for staleness compensation.
 
-        When using stale gradients, we may want to scale them to
-        compensate for the delay.
+        Standard async SGD theory suggests reducing effective learning rate
+        for stale gradients: η_effective = η / (1 + τ)
+
+        We implement this as gradient scaling: scale = 1 / (1 + λ * τ)
+        where λ controls the reduction strength.
+
+        With λ=0.1 and τ=2: scale = 1/(1+0.2) = 0.83 (17% reduction)
+        With λ=0.1 and τ=4: scale = 1/(1+0.4) = 0.71 (29% reduction)
 
         Returns:
             Dict mapping modality names to gradient scale factors
@@ -457,8 +474,9 @@ class ASGMLScheduler:
 
         for m in self.modalities:
             tau = staleness_vals.get(m, 0)
-            # Scale = 1 + λ * τ (compensate for missed updates)
-            scales[m] = 1.0 + self.lambda_comp * tau
+            # Scale = 1 / (1 + λ * τ) (reduce stale gradient contribution)
+            # This follows async SGD convergence theory
+            scales[m] = 1.0 / (1.0 + self.lambda_comp * tau)
 
         return scales
 

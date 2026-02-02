@@ -104,6 +104,7 @@ class ProbeManager:
         probe_type: str = "linear",
         probe_lr: float = 1e-3,
         device: torch.device = None,
+        ema_alpha: float = 0.1,
     ):
         """
         Args:
@@ -113,12 +114,14 @@ class ProbeManager:
             probe_type: 'linear' or 'mlp_1layer'
             probe_lr: Learning rate for probe optimizers
             device: Device to place probes on
+            ema_alpha: EMA smoothing factor for probe accuracies (0.1 = slow, 0.9 = fast)
         """
         self.modalities = modalities
         self.feature_dim = feature_dim
         self.num_classes = num_classes
         self.probe_type = probe_type
         self.device = device or torch.device('cpu')
+        self.ema_alpha = ema_alpha
 
         # Create probes for each modality
         self.probes: Dict[str, nn.Module] = {}
@@ -136,6 +139,11 @@ class ProbeManager:
         self.accuracy_history: Dict[str, List[float]] = {
             m: [] for m in modalities
         }
+
+        # EMA-smoothed accuracies for stable adaptive scheduling
+        # Raw per-batch probe accuracy has high variance (batch_size=64, 6 classes)
+        # EMA smoothing prevents erratic adaptation decisions
+        self.accuracy_ema: Dict[str, float] = {m: 0.0 for m in modalities}
 
     def _create_probe(self) -> nn.Module:
         """Create a probe network based on probe_type."""
@@ -230,9 +238,16 @@ class ProbeManager:
             # Track history
             self.accuracy_history[modality].append(accuracy)
 
+            # Update EMA-smoothed accuracy
+            # EMA = α * new_value + (1-α) * old_ema
+            old_ema = self.accuracy_ema[modality]
+            self.accuracy_ema[modality] = (
+                self.ema_alpha * accuracy + (1 - self.ema_alpha) * old_ema
+            )
+
         return results
 
-    def compute_utilization_gap(self) -> Optional[float]:
+    def compute_utilization_gap(self, use_ema: bool = True) -> Optional[float]:
         """
         Compute utilization gap between modalities.
 
@@ -241,15 +256,22 @@ class ProbeManager:
         A large gap indicates modality imbalance - one modality's
         representations are much more discriminative than another's.
 
+        Args:
+            use_ema: If True, use EMA-smoothed accuracies (more stable).
+
         Returns:
             Utilization gap, or None if not enough history
         """
         if not all(len(h) > 0 for h in self.accuracy_history.values()):
             return None
 
-        # Use most recent accuracies
-        recent_accs = [h[-1] for h in self.accuracy_history.values()]
-        return max(recent_accs) - min(recent_accs)
+        if use_ema:
+            accs = list(self.accuracy_ema.values())
+        else:
+            # Use most recent raw accuracies
+            accs = [h[-1] for h in self.accuracy_history.values()]
+
+        return max(accs) - min(accs)
 
     def get_dominant_modality(self) -> Optional[str]:
         """
@@ -277,24 +299,34 @@ class ProbeManager:
         recent_accs = {m: h[-1] for m, h in self.accuracy_history.items()}
         return min(recent_accs, key=recent_accs.get)
 
-    def get_utilization_scores(self) -> Dict[str, float]:
+    def get_utilization_scores(self, use_ema: bool = True) -> Dict[str, float]:
         """
         Get current utilization score (probe accuracy) for each modality.
+
+        Args:
+            use_ema: If True, return EMA-smoothed accuracies (more stable for adaptive control).
+                     If False, return raw most-recent accuracies.
 
         Returns:
             Dict mapping modality names to their utilization scores
         """
-        scores = {}
-        for modality in self.modalities:
-            if self.accuracy_history[modality]:
-                scores[modality] = self.accuracy_history[modality][-1]
-            else:
-                scores[modality] = 0.0
-        return scores
+        if use_ema:
+            # Return EMA-smoothed values for stable adaptive scheduling
+            return self.accuracy_ema.copy()
+        else:
+            # Return raw most-recent values
+            scores = {}
+            for modality in self.modalities:
+                if self.accuracy_history[modality]:
+                    scores[modality] = self.accuracy_history[modality][-1]
+                else:
+                    scores[modality] = 0.0
+            return scores
 
     def reset_history(self) -> None:
-        """Reset accuracy history (call at start of training or new phase)."""
+        """Reset accuracy history and EMA (call at start of training or new phase)."""
         self.accuracy_history = {m: [] for m in self.modalities}
+        self.accuracy_ema = {m: 0.0 for m in self.modalities}
 
     def state_dict(self) -> Dict:
         """Get state dict for checkpointing."""
@@ -302,6 +334,7 @@ class ProbeManager:
             'probes': {m: p.state_dict() for m, p in self.probes.items()},
             'optimizers': {m: o.state_dict() for m, o in self.optimizers.items()},
             'accuracy_history': self.accuracy_history,
+            'accuracy_ema': self.accuracy_ema,
         }
 
     def load_state_dict(self, state_dict: Dict) -> None:
@@ -310,3 +343,5 @@ class ProbeManager:
             self.probes[m].load_state_dict(state_dict['probes'][m])
             self.optimizers[m].load_state_dict(state_dict['optimizers'][m])
         self.accuracy_history = state_dict['accuracy_history']
+        if 'accuracy_ema' in state_dict:
+            self.accuracy_ema = state_dict['accuracy_ema']

@@ -72,9 +72,14 @@ class AudioEncoder(nn.Module):
             raise ValueError(f"Unknown backbone: {backbone}")
 
         # Modify first conv layer for single-channel spectrogram input
+        # Preserve pretrained information by averaging 3-channel weights into 1 channel
+        pretrained_conv1_weight = self.backbone.conv1.weight.data.clone()
         self.backbone.conv1 = nn.Conv2d(
             1, 64, kernel_size=7, stride=2, padding=3, bias=False
         )
+        # Average RGB channels to create single-channel weights
+        # This preserves learned edge/texture detectors from ImageNet
+        self.backbone.conv1.weight.data = pretrained_conv1_weight.mean(dim=1, keepdim=True)
 
         # Remove classification head
         self.backbone.fc = nn.Identity()

@@ -54,7 +54,8 @@ asgml:
   lambda_comp: 0.1
 
   # Unimodal regularization weight
-  gamma: 4.0
+  # NOTE: Reduced from 4.0 to 1.0 to prevent unimodal loss from dominating
+  gamma: 1.0
 
   # Adaptive mode threshold
   threshold_delta: 0.1
