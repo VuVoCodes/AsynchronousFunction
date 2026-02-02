@@ -422,6 +422,7 @@ def main():
         help="Per-modality LR scales as 'modality:scale,...' (e.g., 'audio:0.5,visual:1.0')"
     )
     parser.add_argument("--epochs", type=int, default=None, help="Override epochs from config")
+    parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint to resume from")
     args = parser.parse_args()
 
     # Load config
@@ -450,10 +451,15 @@ def main():
     set_seed(args.seed)
 
     # Setup output directory
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    exp_name = f"{config['dataset']['name']}_{args.mode}_{timestamp}"
-    output_dir = Path(args.output_dir) / exp_name
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if args.resume:
+        # When resuming, use the same directory as the checkpoint
+        output_dir = Path(args.resume).parent
+        exp_name = output_dir.name
+    else:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        exp_name = f"{config['dataset']['name']}_{args.mode}_{timestamp}"
+        output_dir = Path(args.output_dir) / exp_name
+        output_dir.mkdir(parents=True, exist_ok=True)
 
     # Save config
     config_copy = config.copy()
@@ -590,9 +596,31 @@ def main():
     if "audio" in modalities:
         asgml_scheduler.set_dominant_modality("audio")
 
-    # Training loop
+    # Resume from checkpoint if specified
+    start_epoch = 1
     best_acc = 0.0
-    for epoch in range(1, config["training"]["epochs"] + 1):
+    if args.resume:
+        if Path(args.resume).exists():
+            logger.info(f"Resuming from checkpoint: {args.resume}")
+            checkpoint = torch.load(args.resume, map_location=device)
+            model.load_state_dict(checkpoint["model_state_dict"])
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            start_epoch = checkpoint["epoch"] + 1
+            best_acc = checkpoint.get("best_acc", 0.0)
+            if "probe_manager_state" in checkpoint:
+                probe_manager.load_state_dict(checkpoint["probe_manager_state"])
+            if scaler is not None and "scaler_state_dict" in checkpoint:
+                scaler.load_state_dict(checkpoint["scaler_state_dict"])
+            # Update LR scheduler to correct epoch
+            if lr_scheduler is not None:
+                for _ in range(checkpoint["epoch"]):
+                    lr_scheduler.step()
+            logger.info(f"Resumed from epoch {checkpoint['epoch']}, best_acc={best_acc:.4f}")
+        else:
+            logger.warning(f"Checkpoint not found: {args.resume}, starting from scratch")
+
+    # Training loop
+    for epoch in range(start_epoch, config["training"]["epochs"] + 1):
         # Reset ASGML state at start of epoch (optional - can also persist)
         # asgml_scheduler.reset()
 
@@ -635,24 +663,32 @@ def main():
         # Save checkpoint
         if test_metrics["accuracy"] > best_acc:
             best_acc = test_metrics["accuracy"]
-            torch.save({
+            best_checkpoint = {
                 "epoch": epoch,
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
                 "probe_manager_state": probe_manager.state_dict(),
                 "best_acc": best_acc,
                 "config": config_copy,
-            }, output_dir / "best_model.pt")
+            }
+            if scaler is not None:
+                best_checkpoint["scaler_state_dict"] = scaler.state_dict()
+            torch.save(best_checkpoint, output_dir / "best_model.pt")
             logger.info(f"New best model saved with accuracy: {best_acc:.4f}")
 
         # Periodic checkpoint
         if epoch % config["logging"]["save_interval"] == 0:
-            torch.save({
+            checkpoint_data = {
                 "epoch": epoch,
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
+                "probe_manager_state": probe_manager.state_dict(),
+                "best_acc": best_acc,
                 "config": config_copy,
-            }, output_dir / f"checkpoint_epoch{epoch}.pt")
+            }
+            if scaler is not None:
+                checkpoint_data["scaler_state_dict"] = scaler.state_dict()
+            torch.save(checkpoint_data, output_dir / f"checkpoint_epoch{epoch}.pt")
 
     # Final summary
     logger.info(f"Training complete. Best accuracy: {best_acc:.4f}")
