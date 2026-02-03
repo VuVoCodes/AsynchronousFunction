@@ -69,7 +69,9 @@ def get_dataset(config: dict, split: str):
     root = config["dataset"]["root"]
 
     if name == "cremad":
-        return CREMADDataset(root=root, split=split)
+        fps = config["dataset"].get("fps", 1)
+        num_frames = config["dataset"].get("num_frames", 1)
+        return CREMADDataset(root=root, split=split, fps=fps, num_frames=num_frames)
     elif name == "ave":
         return AVEDataset(root=root, split=split)
     elif name == "kinetics_sounds":
@@ -236,16 +238,26 @@ def train_epoch(
             # CRITICAL FIX: Unscale gradients BEFORE storing/modifying
             # This prevents AMP scale factor mismatch when applying stale gradients
             scaler.unscale_(optimizer)
+
+            # Check for inf/nan gradients after unscaling
+            # scaler.unscale_() can produce inf/nan on overflow
+            grads_valid = True
+            for param in model.parameters():
+                if param.grad is not None:
+                    if torch.isnan(param.grad).any() or torch.isinf(param.grad).any():
+                        grads_valid = False
+                        break
         else:
             loss.backward()
+            grads_valid = True
 
         # ========== Compute Gradient Norms (for tracking) ==========
-        # Now computed on unscaled gradients for accurate tracking
-        grad_norms = compute_gradient_norms(model, modalities)
+        grad_norms = compute_gradient_norms(model, modalities) if grads_valid else {m: 0.0 for m in modalities}
 
         # ========== Store Gradients (for staleness mode) ==========
-        # Gradients are now unscaled, so staleness buffer stores correct values
-        if scheduler.mode == "staleness":
+        # Skip storing if AMP overflow detected (grads_valid=False)
+        # fp32 mode: grads_valid is always True (no overflow issues)
+        if scheduler.mode == "staleness" and grads_valid:
             for m in modalities:
                 encoder_params = {
                     name: param
@@ -257,7 +269,8 @@ def train_epoch(
                 )
 
         # ========== Apply ASGML Gradient Modifications ==========
-        if config["asgml"]["enabled"]:
+        # Only modify gradients if they are valid (no inf/nan from AMP overflow)
+        if config["asgml"]["enabled"] and grads_valid:
             if scheduler.mode == "staleness":
                 # Apply stale gradients for dominant modality
                 staleness_vals = scheduler.get_staleness_values()

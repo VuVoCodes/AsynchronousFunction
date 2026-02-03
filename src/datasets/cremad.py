@@ -1,196 +1,231 @@
 """
 CREMA-D Dataset for audio-visual emotion recognition.
 
+EXACTLY matches OGM-GE preprocessing (Peng et al., CVPR 2022):
+https://github.com/GeWu-Lab/OGM-GE_CVPR2022
+
 CREMA-D contains 7,442 video clips of actors expressing 6 emotions:
-- Anger, Disgust, Fear, Happy, Neutral, Sad
+- NEU (Neutral), HAP (Happy), SAD (Sad), FEA (Fear), DIS (Disgust), ANG (Anger)
 
 Reference:
 Cao et al., "CREMA-D: Crowd-sourced Emotional Multimodal Actors Dataset"
 IEEE Transactions on Affective Computing, 2014
 """
 
+import csv
 import os
 import torch
 import numpy as np
 import librosa
 from PIL import Image
 from torch.utils.data import Dataset
-from typing import Dict, Optional, Tuple, Callable
+from typing import Dict
 import torchvision.transforms as transforms
 
 
 class CREMADDataset(Dataset):
     """
-    CREMA-D Dataset for audio-visual emotion recognition.
+    CREMA-D Dataset matching OGM-GE preprocessing exactly.
 
     Expected directory structure:
     root/
-        AudioWAV/           # Audio files (.wav)
-        VideoFlash/         # Video frames
-        processedResults/   # Annotations
+        AudioWAV/                    # Audio files (.wav)
+        Image-01-FPS/               # Video frames at 1 FPS
+            {clip_id}/
+                frame_0001.jpg
+                ...
+        train.csv                   # OGM-GE train split
+        test.csv                    # OGM-GE test split
+
+    Audio preprocessing (OGM-GE exact):
+        - Sample rate: 22050 Hz
+        - Duration: 3 seconds (tiled if shorter)
+        - Clip amplitude to [-1, 1]
+        - STFT: n_fft=512, hop_length=353
+        - Log magnitude: log(abs(spectrogram) + 1e-7)
+        - Output shape: (1, 257, 187)
+
+    Visual preprocessing (OGM-GE exact):
+        - Train: RandomResizedCrop(224), RandomHorizontalFlip
+        - Test: Resize(224, 224)
+        - ImageNet normalization
     """
 
-    EMOTIONS = ['ANG', 'DIS', 'FEA', 'HAP', 'NEU', 'SAD']
-    EMOTION_TO_IDX = {e: i for i, e in enumerate(EMOTIONS)}
+    # OGM-GE class mapping (NOT alphabetical!)
+    EMOTIONS = ['NEU', 'HAP', 'SAD', 'FEA', 'DIS', 'ANG']
+    EMOTION_TO_IDX = {'NEU': 0, 'HAP': 1, 'SAD': 2, 'FEA': 3, 'DIS': 4, 'ANG': 5}
+
+    # Audio parameters (OGM-GE exact)
+    SAMPLE_RATE = 22050
+    DURATION_SEC = 3
+    N_FFT = 512
+    HOP_LENGTH = 353
 
     def __init__(
         self,
         root: str,
         split: str = "train",
-        visual_transform: Optional[Callable] = None,
-        audio_transform: Optional[Callable] = None,
-        sr: int = 16000,
-        n_fft: int = 512,
-        hop_length: int = 160,
-        n_mels: int = 128,
+        fps: int = 1,
+        num_frames: int = 1,  # OGM-GE default for CREMA-D
     ):
         """
         Args:
             root: Root directory of CREMA-D dataset
             split: 'train' or 'test'
-            visual_transform: Transform for visual input
-            audio_transform: Transform for audio spectrogram
-            sr: Audio sample rate
-            n_fft: FFT window size
-            hop_length: Hop length for spectrogram
-            n_mels: Number of mel bands
+            fps: Frames per second for video (default: 1, matching OGM-GE)
+            num_frames: Number of frames to sample (default: 1 for CREMA-D per OGM-GE)
         """
         self.root = root
         self.split = split
-        self.sr = sr
-        self.n_fft = n_fft
-        self.hop_length = hop_length
-        self.n_mels = n_mels
+        self.fps = fps
+        self.num_frames = num_frames
 
-        # Default transforms
-        if visual_transform is None:
+        # Paths
+        self.audio_dir = os.path.join(root, "AudioWAV")
+        self.visual_dir = os.path.join(root, f"Image-{fps:02d}-FPS")
+
+        # Visual transforms (OGM-GE exact)
+        if split == "train":
             self.visual_transform = transforms.Compose([
-                transforms.Resize((224, 224)),
+                transforms.RandomResizedCrop(224),
+                transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=[0.485, 0.456, 0.406],
-                    std=[0.229, 0.224, 0.225]
-                ),
+                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
             ])
         else:
-            self.visual_transform = visual_transform
+            self.visual_transform = transforms.Compose([
+                transforms.Resize(size=(224, 224)),
+                transforms.ToTensor(),
+                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+            ])
 
-        self.audio_transform = audio_transform
-
-        # Load file list and labels
+        # Load samples from CSV (OGM-GE exact split)
         self.samples = self._load_samples()
 
     def _load_samples(self):
-        """Load list of (audio_path, video_path, label) tuples."""
+        """Load samples from OGM-GE train/test CSV files."""
         samples = []
 
-        audio_dir = os.path.join(self.root, "AudioWAV")
-        # Look for extracted frames first, fall back to VideoFlash
-        video_dir = os.path.join(self.root, "VideoFrames")
-        if not os.path.exists(video_dir):
-            video_dir = os.path.join(self.root, "VideoFlash")
+        csv_file = os.path.join(self.root, f"{self.split}.csv")
+        if not os.path.exists(csv_file):
+            raise FileNotFoundError(
+                f"CSV file not found: {csv_file}\n"
+                f"Please copy train.csv and test.csv from OGM-GE repository to {self.root}"
+            )
 
-        # List all audio files
-        if not os.path.exists(audio_dir):
-            raise FileNotFoundError(f"Audio directory not found: {audio_dir}")
+        with open(csv_file, encoding='UTF-8-sig') as f:
+            csv_reader = csv.reader(f)
+            for item in csv_reader:
+                if len(item) < 2:
+                    continue
 
-        audio_files = [f for f in os.listdir(audio_dir) if f.endswith('.wav')]
+                clip_id = item[0]
+                emotion = item[1]
 
-        for audio_file in audio_files:
-            # Parse filename: {ActorID}_{Sentence}_{Emotion}_{Level}.wav
-            parts = audio_file.replace('.wav', '').split('_')
-            if len(parts) >= 3:
-                emotion = parts[2]
-                if emotion in self.EMOTION_TO_IDX:
-                    audio_path = os.path.join(audio_dir, audio_file)
-                    # Video frame path (assuming extracted frames)
-                    video_name = audio_file.replace('.wav', '')
-                    video_path = os.path.join(video_dir, video_name)
+                audio_path = os.path.join(self.audio_dir, f"{clip_id}.wav")
+                visual_path = os.path.join(self.visual_dir, clip_id)
+
+                # Only include if both audio and visual exist (OGM-GE behavior)
+                if os.path.exists(audio_path) and os.path.exists(visual_path):
                     label = self.EMOTION_TO_IDX[emotion]
-                    samples.append((audio_path, video_path, label))
+                    samples.append((audio_path, visual_path, label))
 
-        # Split into train/test (90/10 split based on actor ID)
-        # Sort by actor ID for reproducible split
-        samples.sort(key=lambda x: x[0])
-        n_samples = len(samples)
-        n_train = int(0.9 * n_samples)
-
-        if self.split == "train":
-            samples = samples[:n_train]
-        else:
-            samples = samples[n_train:]
-
+        print(f"Loaded {len(samples)} samples for {self.split} split")
         return samples
 
     def _load_audio(self, audio_path: str) -> torch.Tensor:
-        """Load and convert audio to mel spectrogram."""
+        """
+        Load and preprocess audio (OGM-GE exact).
+
+        Steps:
+        1. Load at 22050 Hz
+        2. Tile to 3 seconds
+        3. Clip to [-1, 1]
+        4. STFT with n_fft=512, hop_length=353
+        5. Log magnitude: log(abs + 1e-7)
+        """
         try:
-            # Load audio
-            waveform, sr = librosa.load(audio_path, sr=self.sr)
+            # Load audio at 22050 Hz (OGM-GE exact)
+            samples, _ = librosa.load(audio_path, sr=self.SAMPLE_RATE)
 
-            # Compute mel spectrogram
-            mel_spec = librosa.feature.melspectrogram(
-                y=waveform,
-                sr=sr,
-                n_fft=self.n_fft,
-                hop_length=self.hop_length,
-                n_mels=self.n_mels,
-            )
+            # Tile to 3 seconds (OGM-GE exact)
+            target_length = self.SAMPLE_RATE * self.DURATION_SEC
+            resamples = np.tile(samples, 3)[:target_length]
 
-            # Convert to log scale
-            log_mel_spec = librosa.power_to_db(mel_spec, ref=np.max)
+            # Clip amplitude to [-1, 1] (OGM-GE exact)
+            resamples = np.clip(resamples, -1.0, 1.0)
 
-            # Normalize to [0, 1]
-            log_mel_spec = (log_mel_spec - log_mel_spec.min()) / (log_mel_spec.max() - log_mel_spec.min() + 1e-8)
+            # STFT (OGM-GE exact)
+            spectrogram = librosa.stft(resamples, n_fft=self.N_FFT, hop_length=self.HOP_LENGTH)
 
-            # Convert to tensor and add channel dimension
-            spec_tensor = torch.FloatTensor(log_mel_spec).unsqueeze(0)
+            # Log magnitude (OGM-GE exact)
+            spectrogram = np.log(np.abs(spectrogram) + 1e-7)
 
-            # Resize to fixed size
-            spec_tensor = torch.nn.functional.interpolate(
-                spec_tensor.unsqueeze(0), size=(128, 128), mode='bilinear'
-            ).squeeze(0)
+            # Convert to tensor with channel dimension
+            # Shape: (1, 257, 187) for n_fft=512, hop_length=353, 3s at 22050Hz
+            spec_tensor = torch.FloatTensor(spectrogram).unsqueeze(0)
 
             return spec_tensor
 
         except Exception as e:
             print(f"Error loading audio {audio_path}: {e}")
-            return torch.zeros(1, 128, 128)
+            # Return zeros with expected shape
+            freq_bins = self.N_FFT // 2 + 1  # 257
+            time_frames = (self.SAMPLE_RATE * self.DURATION_SEC) // self.HOP_LENGTH + 1  # ~187
+            return torch.zeros(1, freq_bins, time_frames)
 
-    def _load_visual(self, video_path: str) -> torch.Tensor:
-        """Load a single frame from video."""
+    def _load_visual(self, visual_path: str) -> torch.Tensor:
+        """
+        Load video frames (OGM-GE exact).
+
+        Steps:
+        1. List all frames in directory
+        2. Randomly select num_frames (train) or take first num_frames (test)
+        3. Apply transforms
+        4. Return as (C, T, H, W) matching OGM-GE format
+        """
         try:
-            # Check if path ends with .jpg (extracted frame)
-            if video_path.endswith('.jpg') and os.path.exists(video_path):
-                image = Image.open(video_path).convert('RGB')
-            # Try to load a frame (assuming frames are extracted)
-            elif os.path.exists(video_path + ".jpg"):
-                image = Image.open(video_path + ".jpg").convert('RGB')
-            # Try directory with frames
-            elif os.path.isdir(video_path):
-                frames = sorted(os.listdir(video_path))
-                if frames:
-                    mid_frame = frames[len(frames) // 2]
-                    image = Image.open(os.path.join(video_path, mid_frame)).convert('RGB')
-                else:
-                    image = Image.new('RGB', (224, 224), color='black')
-            else:
-                image = Image.new('RGB', (224, 224), color='black')
+            if not os.path.isdir(visual_path):
+                raise FileNotFoundError(f"Visual path not a directory: {visual_path}")
 
-            return self.visual_transform(image)
+            frame_files = sorted(os.listdir(visual_path))
+            if len(frame_files) == 0:
+                raise FileNotFoundError(f"No frames in: {visual_path}")
+
+            # OGM-GE BUG REPRODUCTION: They compute random indices but then use
+            # sequential 'i' to index frame_files, so they always load first N frames.
+            # To reproduce their results exactly, we match this behavior.
+            #
+            # OGM-GE code (line 84-90):
+            #   select_index = np.random.choice(len(image_samples), size=self.args.fps, replace=False)
+            #   select_index.sort()
+            #   for i in range(self.args.fps):
+            #       img = Image.open(..., image_samples[i])  # BUG: uses 'i' not select_index[i]
+
+            # Load first num_frames frames (matching OGM-GE actual behavior)
+            frames = torch.zeros((self.num_frames, 3, 224, 224))
+            for i in range(min(self.num_frames, len(frame_files))):
+                img_path = os.path.join(visual_path, frame_files[i])
+                img = Image.open(img_path).convert('RGB')
+                frames[i] = self.visual_transform(img)
+
+            # OGM-GE permutes to (C, T, H, W) for model input
+            visual = frames.permute(1, 0, 2, 3)  # Shape: (C, T, H, W) = (3, num_frames, 224, 224)
+
+            return visual
 
         except Exception as e:
-            print(f"Error loading visual {video_path}: {e}")
-            return torch.zeros(3, 224, 224)
+            print(f"Error loading visual {visual_path}: {e}")
+            return torch.zeros(3, self.num_frames, 224, 224)
 
     def __len__(self) -> int:
         return len(self.samples)
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        audio_path, video_path, label = self.samples[idx]
+        audio_path, visual_path, label = self.samples[idx]
 
         audio = self._load_audio(audio_path)
-        visual = self._load_visual(video_path)
+        visual = self._load_visual(visual_path)
 
         return {
             "audio": audio,
