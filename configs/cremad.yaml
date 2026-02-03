@@ -64,6 +64,13 @@ asgml:
   # Adaptive mode threshold
   threshold_delta: 0.1  # Utilization gap threshold to trigger adaptation
 
+  # Signal source for adaptive mode
+  # "dual"  - Design doc method: S_i(t) = β·G_i(t) + (1-β)·D_i(t) (gradient + loss descent)
+  # "probe" - Probe-based method: uses probe accuracy to detect dominance
+  # "both"  - Combines dual-signal and probe signals
+  signal_source: dual
+  signal_blend: 0.5  # Weight for dual-signal when signal_source="both" (α)
+
   # Probe settings
   probe_type: linear  # "linear" or "mlp_1layer"
   probe_lr: 0.001

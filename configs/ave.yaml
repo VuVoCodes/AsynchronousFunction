@@ -60,6 +60,10 @@ asgml:
   # Adaptive mode threshold
   threshold_delta: 0.1
 
+  # Signal source for adaptive mode
+  signal_source: dual
+  signal_blend: 0.5
+
   # Probe settings
   probe_type: linear
   probe_lr: 0.001

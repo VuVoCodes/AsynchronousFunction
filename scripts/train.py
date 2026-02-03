@@ -335,13 +335,58 @@ def train_epoch(
             utilization_gap = probe_manager.compute_utilization_gap()
             dominant = probe_manager.get_dominant_modality()
 
-            # Update scheduler with probe signals (for adaptive mode)
-            if scheduler.adaptation == "adaptive" and utilization_gap is not None:
-                scheduler.set_dominant_modality(dominant)
-                scheduler.update_from_utilization(
-                    probe_manager.get_utilization_scores(),
-                    utilization_gap,
-                )
+            # ========== Update Scheduler (Adaptive Mode) ==========
+            if scheduler.adaptation == "adaptive":
+                signal_source = config["asgml"].get("signal_source", "dual")
+
+                if signal_source == "dual":
+                    # Design doc method: S_i(t) = β·G_i(t) + (1-β)·D_i(t)
+                    # Uses gradient magnitude + loss descent rate (no probes)
+                    learning_speeds = scheduler.dynamics.compute_learning_speed()
+                    dominant_from_dynamics = max(learning_speeds, key=learning_speeds.get)
+                    scheduler.set_dominant_modality(dominant_from_dynamics)
+
+                    # Update tau from learning speeds
+                    for m in modalities:
+                        raw_tau = scheduler.tau_base * learning_speeds[m]
+                        scheduler.current_tau[m] = max(
+                            scheduler.tau_min,
+                            min(scheduler.tau_max, raw_tau)
+                        )
+
+                elif signal_source == "probe" and utilization_gap is not None:
+                    # Probe-based method (original implementation)
+                    scheduler.set_dominant_modality(dominant)
+                    scheduler.update_from_utilization(
+                        probe_manager.get_utilization_scores(),
+                        utilization_gap,
+                    )
+
+                elif signal_source == "both" and utilization_gap is not None:
+                    # Combine dual-signal and probe signals
+                    learning_speeds = scheduler.dynamics.compute_learning_speed()
+                    probe_scores = probe_manager.get_utilization_scores()
+
+                    # Normalize probe scores to be comparable to learning speeds
+                    max_probe = max(probe_scores.values()) if probe_scores.values() else 1.0
+                    norm_probe = {m: v / max(max_probe, 1e-8) for m, v in probe_scores.items()}
+
+                    alpha = config["asgml"].get("signal_blend", 0.5)  # Weight for dual-signal
+
+                    for m in modalities:
+                        combined = alpha * learning_speeds[m] + (1 - alpha) * norm_probe[m]
+                        raw_tau = scheduler.tau_base * combined
+                        scheduler.current_tau[m] = max(
+                            scheduler.tau_min,
+                            min(scheduler.tau_max, raw_tau)
+                        )
+
+                    # Set dominant from combined signal
+                    combined_scores = {
+                        m: alpha * learning_speeds[m] + (1 - alpha) * norm_probe[m]
+                        for m in modalities
+                    }
+                    scheduler.set_dominant_modality(max(combined_scores, key=combined_scores.get))
 
             # Log probe metrics
             if writer is not None:
@@ -353,6 +398,11 @@ def train_epoch(
                     )
                 if utilization_gap is not None:
                     writer.add_scalar("probe/utilization_gap", utilization_gap, global_step)
+
+                # Log learning dynamics (dual-signal)
+                learning_speeds = scheduler.dynamics.compute_learning_speed()
+                for m in modalities:
+                    writer.add_scalar(f"dynamics/learning_speed_{m}", learning_speeds[m], global_step)
 
         # ========== Logging ==========
         pbar.set_postfix({

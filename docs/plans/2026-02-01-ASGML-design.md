@@ -77,16 +77,15 @@ At step t, modality i updates if:
 update_i(t) = (t mod round(τ_i(t))) == 0
 ```
 
-#### Gradient Scaling (Staleness Compensation)
+#### Gradient Scaling (Staleness Compensation) SGD 
 
 When modality m_i does update at step t with staleness τ_i:
 
 ```
-g_i = ∇L_i * (1 + λ * τ_i)
+g_i = ∇L_i / (1 + λ * τ_i)
 ```
 
-This compensates for skipped updates, similar to gradient accumulation in distributed training.
-
+This reduces the contribution of stale gradients, following async SGD convergence theory. Stale gradients computed at old parameters may point in suboptimal directions.
 #### Total Loss
 
 ```
