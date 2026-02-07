@@ -7,6 +7,7 @@ Supports multiple experimental conditions:
 - Fixed frequency: Dominant modality updates every k steps
 - Fixed staleness: Dominant modality uses τ-step-old gradients
 - Adaptive ASGML: Probe-driven staleness/frequency adaptation
+- MILES: Modality-Informed Learning Rate Scheduler (epoch-level LR adjustment)
 
 Usage:
     # Baseline (no ASGML)
@@ -20,6 +21,15 @@ Usage:
 
     # Adaptive ASGML (full method)
     python scripts/train.py --config configs/cremad.yaml --mode adaptive
+
+    # MILES (learning rate scheduling baseline)
+    python scripts/train.py --config configs/cremad.yaml --mode miles --miles-threshold 0.2 --miles-reduction 0.5
+
+    # OGM-GE + ASGML adaptive (combined)
+    python scripts/train.py --config configs/cremad.yaml --mode adaptive --ogm-ge --alpha 0.8
+
+    # OGM-GE alone (for comparison)
+    python scripts/train.py --config configs/cremad.yaml --mode baseline --ogm-ge --alpha 0.8
 """
 
 import argparse
@@ -173,6 +183,353 @@ def get_scheduler(optimizer, config: dict):
         raise ValueError(f"Unknown scheduler: {sched_name}")
 
 
+def get_miles_optimizer(model: nn.Module, config: dict):
+    """
+    Create optimizer with separate parameter groups for MILES.
+
+    MILES requires per-modality learning rate control, so we create
+    separate parameter groups for each encoder and the fusion module.
+    """
+    opt_name = config["training"].get("miles_optimizer", "adam")  # MILES paper uses Adam
+    base_lr = config["training"]["lr"]
+    weight_decay = config["training"].get("weight_decay", 1e-4)
+
+    param_groups = []
+
+    # Encoder parameters (per-modality LR)
+    for modality in model.modalities:
+        param_groups.append({
+            'params': list(model.encoders[modality].parameters()),
+            'lr': base_lr,
+            'name': f'encoder_{modality}',
+        })
+
+    # Fusion + classifier parameters
+    fusion_params = (
+        list(model.fusion.parameters()) +
+        list(model.classifier.parameters()) +
+        list(model.unimodal_classifiers.parameters())
+    )
+    param_groups.append({
+        'params': fusion_params,
+        'lr': base_lr,
+        'name': 'fusion',
+    })
+
+    if opt_name == "adam":
+        return optim.Adam(param_groups, lr=base_lr, weight_decay=weight_decay)
+    elif opt_name == "sgd":
+        momentum = config["training"].get("momentum", 0.9)
+        return optim.SGD(param_groups, lr=base_lr, momentum=momentum, weight_decay=weight_decay)
+    else:
+        raise ValueError(f"Unknown optimizer for MILES: {opt_name}")
+
+
+def miles_adjust_learning_rates(
+    optimizer: optim.Optimizer,
+    acc_multimodal: float,
+    acc_per_modality: dict,
+    modalities: list,
+    base_lr: float,
+    threshold: float = 0.2,
+    reduction: float = 0.5,
+    logger=None,
+):
+    """
+    MILES learning rate adjustment based on conditional utilization rates.
+
+    Implements Algorithm 1 from the MILES paper:
+    - Compute conditional utilization rate per modality: u_i = (M(ŷ_AB) - M(ŷ_j)) / M(ŷ_AB)
+    - Compute δ_AB = |u_A - u_B|
+    - If δ > threshold, reduce LR for dominant modality by factor μ
+
+    Args:
+        optimizer: Optimizer with per-modality parameter groups
+        acc_multimodal: Multimodal fusion accuracy
+        acc_per_modality: Dict mapping modality name to unimodal accuracy
+        modalities: List of modality names
+        base_lr: Base learning rate
+        threshold: τ in MILES - threshold for triggering LR adjustment
+        reduction: μ in MILES - factor to reduce dominant modality's LR
+        logger: Optional logger
+
+    Returns:
+        dict with utilization metrics and adjusted LRs
+    """
+    # Compute conditional utilization rates (Eq. 4 in MILES paper)
+    # u_A = (M(ŷ_AB) - M(ŷ_B)) / M(ŷ_AB)
+    utilization = {}
+    for m in modalities:
+        other_modalities = [om for om in modalities if om != m]
+        # For bimodal: u_A = (acc_multimodal - acc_B) / acc_multimodal
+        # This measures how much modality A contributes beyond the other modality
+        if len(other_modalities) == 1:
+            other_m = other_modalities[0]
+            if acc_multimodal > 0:
+                utilization[m] = (acc_multimodal - acc_per_modality[other_m]) / acc_multimodal
+            else:
+                utilization[m] = 0.0
+        else:
+            # For N>2 modalities, use average of others
+            avg_other = sum(acc_per_modality[om] for om in other_modalities) / len(other_modalities)
+            if acc_multimodal > 0:
+                utilization[m] = (acc_multimodal - avg_other) / acc_multimodal
+            else:
+                utilization[m] = 0.0
+
+    # Compute δ_AB (Eq. 5 in MILES paper)
+    # For bimodal case
+    u_values = list(utilization.values())
+    if len(u_values) == 2:
+        delta = abs(u_values[0] - u_values[1])
+    else:
+        # For N>2, use max difference
+        delta = max(u_values) - min(u_values)
+
+    # Get param group name to index mapping
+    group_indices = {}
+    for i, group in enumerate(optimizer.param_groups):
+        if 'name' in group:
+            group_indices[group['name']] = i
+
+    # MILES Algorithm 1 logic
+    adjusted_lrs = {m: base_lr for m in modalities}
+    adjusted_lrs['fusion'] = base_lr
+
+    # Check if both modalities are underutilized (early training)
+    all_negative = all(utilization[m] < 0 for m in modalities)
+
+    if all_negative or delta <= threshold:
+        # Case 1: No adjustment needed - keep base LR
+        for m in modalities:
+            group_name = f'encoder_{m}'
+            if group_name in group_indices:
+                optimizer.param_groups[group_indices[group_name]]['lr'] = base_lr
+        if 'fusion' in group_indices:
+            optimizer.param_groups[group_indices['fusion']]['lr'] = base_lr
+
+        if logger:
+            logger.info(f"MILES: No LR adjustment (δ={delta:.4f} <= τ={threshold} or all u<0)")
+    else:
+        # Determine dominant modality and adjust LR
+        # Find modality with highest utilization (most dominant)
+        dominant_m = max(utilization, key=utilization.get)
+
+        # Check specific cases from MILES Algorithm 1
+        m_list = list(modalities)
+        if len(m_list) == 2:
+            m_a, m_b = m_list[0], m_list[1]
+            u_a, u_b = utilization[m_a], utilization[m_b]
+
+            if u_a > 0 and u_b < 0 and delta > threshold:
+                # m_a is dominant, reduce its LR
+                dominant_m = m_a
+            elif u_a < 0 and u_b > 0 and delta > threshold:
+                # m_b is dominant, reduce its LR
+                dominant_m = m_b
+            elif u_a > 0 and u_b > 0 and delta > threshold:
+                # Both positive but imbalanced - reduce the higher one
+                dominant_m = m_a if u_a > u_b else m_b
+
+        # Apply LR reduction to dominant modality
+        for m in modalities:
+            group_name = f'encoder_{m}'
+            if group_name in group_indices:
+                if m == dominant_m:
+                    new_lr = base_lr * reduction
+                    optimizer.param_groups[group_indices[group_name]]['lr'] = new_lr
+                    adjusted_lrs[m] = new_lr
+                else:
+                    optimizer.param_groups[group_indices[group_name]]['lr'] = base_lr
+                    adjusted_lrs[m] = base_lr
+
+        # Fusion always gets base LR
+        if 'fusion' in group_indices:
+            optimizer.param_groups[group_indices['fusion']]['lr'] = base_lr
+
+        if logger:
+            logger.info(
+                f"MILES: Adjusted LRs (δ={delta:.4f} > τ={threshold}), "
+                f"dominant={dominant_m}, u={utilization}, "
+                f"LRs={adjusted_lrs}"
+            )
+
+    return {
+        'utilization': utilization,
+        'delta': delta,
+        'adjusted_lrs': adjusted_lrs,
+        'dominant': max(utilization, key=utilization.get) if utilization else None,
+    }
+
+
+def train_epoch_miles(
+    model: nn.Module,
+    dataloader: DataLoader,
+    optimizer: optim.Optimizer,
+    device: torch.device,
+    epoch: int,
+    config: dict,
+    logger,
+    writer: SummaryWriter = None,
+):
+    """
+    Train for one epoch in MILES mode.
+
+    MILES uses standard training with auxiliary unimodal losses,
+    but LR adjustment happens at epoch level (after validation).
+    """
+    model.train()
+    criterion = nn.CrossEntropyLoss()
+
+    loss_meter = AverageMeter("Loss")
+    loss_fusion_meter = AverageMeter("FusionLoss")
+    metric_tracker = MetricTracker(config["evaluation"]["metrics"])
+    modalities = config["dataset"]["modalities"]
+
+    # Track unimodal metrics for MILES
+    unimodal_trackers = {m: MetricTracker(['accuracy']) for m in modalities}
+
+    gamma = config["asgml"].get("gamma", 1.0)  # Weight for unimodal losses
+
+    pbar = tqdm(dataloader, desc=f"Epoch {epoch}")
+
+    for batch_idx, batch in enumerate(pbar):
+        global_step = (epoch - 1) * len(dataloader) + batch_idx
+
+        inputs = {m: batch[m].to(device, non_blocking=True) for m in modalities}
+        targets = batch["label"].to(device, non_blocking=True)
+
+        optimizer.zero_grad()
+
+        # Forward pass
+        logits, unimodal_logits, features = model(inputs, return_features=True)
+
+        # Compute losses (MILES uses multimodal + unimodal losses, Eq. 3 in paper)
+        loss_fusion = criterion(logits, targets)
+        loss_unimodal = {}
+        for m in modalities:
+            loss_unimodal[m] = criterion(unimodal_logits[m], targets)
+
+        # Total loss: L = L_fusion + γ * Σ L_unimodal
+        loss = loss_fusion + gamma * sum(loss_unimodal.values())
+
+        # Backward pass
+        loss.backward()
+        optimizer.step()
+
+        # Update metrics
+        loss_meter.update(loss.item(), targets.size(0))
+        loss_fusion_meter.update(loss_fusion.item(), targets.size(0))
+        metric_tracker.update(logits, targets)
+
+        # Track unimodal performance (for MILES algorithm)
+        for m in modalities:
+            unimodal_trackers[m].update(unimodal_logits[m], targets)
+
+        pbar.set_postfix({"loss": f"{loss_meter.avg:.4f}"})
+
+        # Logging
+        if writer is not None and batch_idx % config["logging"]["log_interval"] == 0:
+            writer.add_scalar("train/loss", loss.item(), global_step)
+            writer.add_scalar("train/fusion_loss", loss_fusion.item(), global_step)
+            for m in modalities:
+                writer.add_scalar(f"train/unimodal_loss_{m}", loss_unimodal[m].item(), global_step)
+
+    # Compute epoch metrics
+    metrics = metric_tracker.compute()
+    metrics["loss"] = loss_meter.avg
+    metrics["fusion_loss"] = loss_fusion_meter.avg
+
+    # Add unimodal accuracies (needed for MILES LR adjustment)
+    for m in modalities:
+        unimodal_metrics = unimodal_trackers[m].compute()
+        metrics[f"unimodal_acc_{m}"] = unimodal_metrics['accuracy']
+
+    return metrics
+
+
+def apply_ogm_ge(
+    model: nn.Module,
+    unimodal_logits: dict,
+    targets: torch.Tensor,
+    modalities: list,
+    alpha: float,
+    epoch: int,
+    modulation_start: int = 0,
+    modulation_end: int = 50,
+) -> tuple:
+    """
+    Apply OGM-GE gradient modulation (Peng et al., NeurIPS 2022).
+
+    Modulates encoder gradients based on per-modality softmax score ratios.
+    The dominant modality's gradients are scaled down and injected with
+    Gaussian noise. Only applies to Conv2d layers (4D gradients).
+
+    Parameters
+    ----------
+    model : nn.Module
+        The multimodal model with named parameters containing 'encoders.{m}'.
+    unimodal_logits : dict
+        Per-modality logits {modality_name: tensor of shape (B, num_classes)}.
+    targets : torch.Tensor
+        Ground truth labels of shape (B,).
+    modalities : list
+        List of modality names.
+    alpha : float
+        OGM-GE coefficient controlling modulation strength.
+    epoch : int
+        Current epoch number.
+    modulation_start : int
+        Epoch to start applying modulation.
+    modulation_end : int
+        Epoch to stop applying modulation.
+
+    Returns
+    -------
+    tuple
+        (coeffs, scores) where coeffs maps modality to scaling coefficient
+        and scores maps modality to summed softmax score for true labels.
+    """
+    softmax = nn.Softmax(dim=1)
+    tanh = nn.Tanh()
+    relu = nn.ReLU(inplace=True)
+
+    # Compute per-modality softmax scores for true labels
+    scores = {}
+    for m in modalities:
+        probs = softmax(unimodal_logits[m])
+        scores[m] = sum(probs[i][targets[i]] for i in range(len(targets)))
+
+    # Compute ratios and coefficients (Eq. 10 in OGM-GE paper)
+    m_list = list(modalities)
+    coeffs = {m: 1.0 for m in modalities}
+
+    if len(m_list) == 2:
+        ratio = scores[m_list[0]] / (scores[m_list[1]] + 1e-8)
+        if ratio > 1:
+            coeffs[m_list[0]] = 1 - tanh(alpha * relu(ratio))
+        else:
+            coeffs[m_list[1]] = 1 - tanh(alpha * relu(1.0 / (ratio + 1e-8)))
+
+    # Apply modulation to encoder conv layers only
+    if modulation_start <= epoch <= modulation_end:
+        for m in modalities:
+            coeff = coeffs[m]
+            if isinstance(coeff, torch.Tensor):
+                coeff_val = coeff
+            else:
+                continue  # coeff is 1.0, no modulation needed
+            for name, param in model.named_parameters():
+                if f"encoders.{m}" in name and param.grad is not None:
+                    if len(param.grad.size()) == 4:  # Conv2d only
+                        param.grad = param.grad * coeff_val + \
+                            torch.zeros_like(param.grad).normal_(
+                                0, param.grad.std().item() + 1e-8
+                            )
+
+    return coeffs, scores
+
+
 def train_epoch(
     model: nn.Module,
     dataloader: DataLoader,
@@ -187,6 +544,7 @@ def train_epoch(
     writer: SummaryWriter = None,
     scaler: GradScaler = None,
     use_amp: bool = False,
+    ogm_ge_config: dict = None,
 ):
     """
     Train for one epoch with ASGML.
@@ -253,6 +611,25 @@ def train_epoch(
 
         # ========== Compute Gradient Norms (for tracking) ==========
         grad_norms = compute_gradient_norms(model, modalities) if grads_valid else {m: 0.0 for m in modalities}
+
+        # ========== OGM-GE Gradient Modulation (optional) ==========
+        if ogm_ge_config is not None and ogm_ge_config["enabled"] and grads_valid:
+            ogm_coeffs, ogm_scores = apply_ogm_ge(
+                model, unimodal_logits, targets, modalities,
+                alpha=ogm_ge_config["alpha"],
+                epoch=epoch,
+                modulation_start=ogm_ge_config["modulation_start"],
+                modulation_end=ogm_ge_config["modulation_end"],
+            )
+            # Log OGM-GE metrics
+            if writer and batch_idx % config["logging"]["log_interval"] == 0:
+                for m in modalities:
+                    c = ogm_coeffs[m]
+                    writer.add_scalar(
+                        f"ogm_ge/coeff_{m}",
+                        c.item() if isinstance(c, torch.Tensor) else c,
+                        global_step,
+                    )
 
         # ========== Store Gradients (for staleness mode) ==========
         # Skip storing if AMP overflow detected (grads_valid=False)
@@ -480,6 +857,62 @@ def evaluate(
     return metrics
 
 
+@torch.no_grad()
+def evaluate_miles(
+    model: nn.Module,
+    dataloader: DataLoader,
+    device: torch.device,
+    config: dict,
+):
+    """
+    Evaluate model for MILES mode.
+
+    Returns both multimodal and unimodal accuracies needed for
+    computing conditional utilization rates.
+    """
+    model.eval()
+
+    loss_meter = AverageMeter("Loss")
+    metric_tracker = MetricTracker(config["evaluation"]["metrics"])
+    modalities = config["dataset"]["modalities"]
+
+    # Track unimodal metrics
+    unimodal_trackers = {m: MetricTracker(['accuracy']) for m in modalities}
+
+    for batch in tqdm(dataloader, desc="Evaluating"):
+        inputs = {m: batch[m].to(device) for m in modalities}
+        targets = batch["label"].to(device)
+
+        logits, unimodal_logits, features = model(inputs, return_features=True)
+        loss = nn.functional.cross_entropy(logits, targets)
+
+        loss_meter.update(loss.item(), targets.size(0))
+        metric_tracker.update(logits, targets)
+
+        # Track unimodal performance
+        for m in modalities:
+            unimodal_trackers[m].update(unimodal_logits[m], targets)
+
+    metrics = metric_tracker.compute()
+    metrics["loss"] = loss_meter.avg
+
+    # Add unimodal accuracies
+    for m in modalities:
+        unimodal_metrics = unimodal_trackers[m].compute()
+        metrics[f"unimodal_acc_{m}"] = unimodal_metrics['accuracy']
+
+    # Compute utilization gap for logging
+    acc_per_modality = {m: metrics[f"unimodal_acc_{m}"] for m in modalities}
+    if len(modalities) == 2:
+        m_a, m_b = list(modalities)
+        if metrics['accuracy'] > 0:
+            u_a = (metrics['accuracy'] - acc_per_modality[m_b]) / metrics['accuracy']
+            u_b = (metrics['accuracy'] - acc_per_modality[m_a]) / metrics['accuracy']
+            metrics['utilization_gap'] = abs(u_a - u_b)
+
+    return metrics
+
+
 def main():
     parser = argparse.ArgumentParser(description="Train ASGML model")
     parser.add_argument("--config", type=str, required=True, help="Path to config file")
@@ -487,11 +920,16 @@ def main():
         "--mode",
         type=str,
         default="baseline",
-        choices=["baseline", "frequency", "staleness", "adaptive"],
+        choices=["baseline", "frequency", "staleness", "adaptive", "miles"],
         help="Training mode",
     )
     parser.add_argument("--fixed-ratio", type=int, default=2, help="Fixed frequency ratio (for frequency mode)")
     parser.add_argument("--fixed-staleness", type=int, default=2, help="Fixed staleness τ (for staleness mode)")
+    # MILES-specific arguments
+    parser.add_argument("--miles-threshold", type=float, default=0.2,
+                        help="MILES: τ threshold for triggering LR adjustment (δ > τ)")
+    parser.add_argument("--miles-reduction", type=float, default=0.5,
+                        help="MILES: μ factor to reduce dominant modality's LR")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--device", type=str, default="cuda", help="Device to use")
     parser.add_argument("--output-dir", type=str, default="outputs", help="Output directory")
@@ -504,6 +942,15 @@ def main():
     )
     parser.add_argument("--epochs", type=int, default=None, help="Override epochs from config")
     parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint to resume from")
+    # OGM-GE arguments (orthogonal to ASGML mode)
+    parser.add_argument("--ogm-ge", action="store_true",
+                        help="Enable OGM-GE gradient modulation (composable with any mode)")
+    parser.add_argument("--alpha", type=float, default=0.8,
+                        help="OGM-GE alpha coefficient (default: 0.8)")
+    parser.add_argument("--modulation-start", type=int, default=0,
+                        help="OGM-GE start epoch (default: 0)")
+    parser.add_argument("--modulation-end", type=int, default=50,
+                        help="OGM-GE end epoch (default: 50)")
     args = parser.parse_args()
 
     # Load config
@@ -551,6 +998,8 @@ def main():
         "seed": args.seed,
         "amp": args.amp,
         "modality_lr_scales": modality_lr_scales,
+        "miles_threshold": args.miles_threshold,
+        "miles_reduction": args.miles_reduction,
     }
     with open(output_dir / "config.yaml", "w") as f:
         yaml.dump(config_copy, f)
@@ -608,6 +1057,104 @@ def main():
 
     logger.info(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
 
+    # ========== MILES Mode: Separate Training Loop ==========
+    if args.mode == "miles":
+        logger.info(f"MILES mode: τ={args.miles_threshold}, μ={args.miles_reduction}")
+
+        # Create MILES optimizer with per-modality parameter groups
+        optimizer = get_miles_optimizer(model, config)
+        base_lr = config["training"]["lr"]
+
+        # Resume from checkpoint if specified
+        start_epoch = 1
+        best_acc = 0.0
+        if args.resume and Path(args.resume).exists():
+            logger.info(f"Resuming from checkpoint: {args.resume}")
+            checkpoint = torch.load(args.resume, map_location=device)
+            model.load_state_dict(checkpoint["model_state_dict"])
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            start_epoch = checkpoint["epoch"] + 1
+            best_acc = checkpoint.get("best_acc", 0.0)
+            logger.info(f"Resumed from epoch {checkpoint['epoch']}, best_acc={best_acc:.4f}")
+
+        # MILES Training Loop
+        for epoch in range(start_epoch, config["training"]["epochs"] + 1):
+            # Train
+            train_metrics = train_epoch_miles(
+                model, train_loader, optimizer, device, epoch, config, logger, writer
+            )
+
+            # Evaluate (on validation/test set for MILES LR adjustment)
+            test_metrics = evaluate_miles(model, test_loader, device, config)
+
+            # ========== MILES LR Adjustment (epoch-level) ==========
+            acc_per_modality = {m: test_metrics[f"unimodal_acc_{m}"] for m in modalities}
+            miles_result = miles_adjust_learning_rates(
+                optimizer=optimizer,
+                acc_multimodal=test_metrics["accuracy"],
+                acc_per_modality=acc_per_modality,
+                modalities=modalities,
+                base_lr=base_lr,
+                threshold=args.miles_threshold,
+                reduction=args.miles_reduction,
+                logger=logger,
+            )
+
+            # Log
+            log_str = (
+                f"Epoch {epoch}: "
+                f"Train Loss={train_metrics['loss']:.4f}, "
+                f"Train Acc={train_metrics['accuracy']:.4f}, "
+                f"Test Acc={test_metrics['accuracy']:.4f}, "
+                f"Test F1={test_metrics['f1_macro']:.4f}"
+            )
+            if "utilization_gap" in test_metrics:
+                log_str += f", Util Gap={test_metrics['utilization_gap']:.4f}"
+            log_str += f", δ={miles_result['delta']:.4f}"
+            logger.info(log_str)
+
+            # Tensorboard logging
+            writer.add_scalar("test/accuracy", test_metrics["accuracy"], epoch)
+            writer.add_scalar("test/f1_macro", test_metrics["f1_macro"], epoch)
+            writer.add_scalar("test/loss", test_metrics["loss"], epoch)
+            if "utilization_gap" in test_metrics:
+                writer.add_scalar("test/utilization_gap", test_metrics["utilization_gap"], epoch)
+            writer.add_scalar("miles/delta", miles_result['delta'], epoch)
+            for m in modalities:
+                writer.add_scalar(f"test/unimodal_acc_{m}", test_metrics[f"unimodal_acc_{m}"], epoch)
+                writer.add_scalar(f"miles/utilization_{m}", miles_result['utilization'][m], epoch)
+                writer.add_scalar(f"miles/lr_{m}", miles_result['adjusted_lrs'][m], epoch)
+
+            # Save checkpoint
+            if test_metrics["accuracy"] > best_acc:
+                best_acc = test_metrics["accuracy"]
+                best_checkpoint = {
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "best_acc": best_acc,
+                    "config": config_copy,
+                }
+                torch.save(best_checkpoint, output_dir / "best_model.pt")
+                logger.info(f"New best model saved with accuracy: {best_acc:.4f}")
+
+            # Periodic checkpoint
+            if epoch % config["logging"]["save_interval"] == 0:
+                checkpoint_data = {
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "best_acc": best_acc,
+                    "config": config_copy,
+                }
+                torch.save(checkpoint_data, output_dir / f"checkpoint_epoch{epoch}.pt")
+
+        # Final summary
+        logger.info(f"Training complete. Best accuracy: {best_acc:.4f}")
+        writer.close()
+        return  # Exit early for MILES mode
+
+    # ========== Standard ASGML Modes ==========
     # Create optimizer and scheduler
     optimizer = get_optimizer(model, config, modality_lr_scales)
     lr_scheduler = get_scheduler(optimizer, config)
@@ -701,6 +1248,20 @@ def main():
         else:
             logger.warning(f"Checkpoint not found: {args.resume}, starting from scratch")
 
+    # OGM-GE config (orthogonal to ASGML mode)
+    ogm_ge_config = None
+    if args.ogm_ge:
+        ogm_ge_config = {
+            "enabled": True,
+            "alpha": args.alpha,
+            "modulation_start": args.modulation_start,
+            "modulation_end": args.modulation_end,
+        }
+        logger.info(
+            f"OGM-GE enabled: alpha={args.alpha}, "
+            f"modulation=[{args.modulation_start}, {args.modulation_end}]"
+        )
+
     # Training loop
     for epoch in range(start_epoch, config["training"]["epochs"] + 1):
         # Reset ASGML state at start of epoch (optional - can also persist)
@@ -710,7 +1271,7 @@ def main():
         train_metrics = train_epoch(
             model, train_loader, optimizer, loss_fn, asgml_scheduler,
             probe_manager, device, epoch, config, logger, writer,
-            scaler=scaler, use_amp=use_amp
+            scaler=scaler, use_amp=use_amp, ogm_ge_config=ogm_ge_config
         )
 
         # Evaluate
