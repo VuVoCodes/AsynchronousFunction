@@ -951,6 +951,29 @@ def main():
                         help="OGM-GE start epoch (default: 0)")
     parser.add_argument("--modulation-end", type=int, default=50,
                         help="OGM-GE end epoch (default: 50)")
+    # ASGML hyperparameter overrides (for sweep)
+    parser.add_argument("--tau-base", type=float, default=None,
+                        help="Override ASGML tau_base (base staleness multiplier)")
+    parser.add_argument("--tau-max", type=float, default=None,
+                        help="Override ASGML tau_max (maximum staleness cap)")
+    parser.add_argument("--beta", type=float, default=None,
+                        help="Override ASGML beta (gradient vs loss signal weight)")
+    parser.add_argument("--gamma-asgml", type=float, default=None,
+                        help="Override ASGML gamma (unimodal regularization weight)")
+    parser.add_argument("--lambda-comp", type=float, default=None,
+                        help="Override ASGML lambda_comp (gradient compensation)")
+    parser.add_argument("--threshold-delta", type=float, default=None,
+                        help="Override ASGML threshold_delta (adaptation threshold)")
+    parser.add_argument("--signal-source", type=str, default=None,
+                        choices=["dual", "probe", "both"],
+                        help="Override ASGML signal_source")
+    parser.add_argument("--soft-mask-scale", type=float, default=None,
+                        help="Override ASGML soft_mask_scale")
+    parser.add_argument("--asgml-mode", type=str, default=None,
+                        choices=["frequency", "staleness"],
+                        help="Override ASGML asgml_mode (frequency or staleness)")
+    parser.add_argument("--exp-name", type=str, default=None,
+                        help="Override experiment name (default: auto-generated)")
     args = parser.parse_args()
 
     # Load config
@@ -962,6 +985,18 @@ def main():
         config["asgml"]["enabled"] = False
     else:
         config["asgml"]["enabled"] = True
+
+    # Apply ASGML hyperparameter overrides from CLI
+    asgml_overrides = {
+        "tau_base": args.tau_base, "tau_max": args.tau_max,
+        "beta": args.beta, "gamma": args.gamma_asgml,
+        "lambda_comp": args.lambda_comp, "threshold_delta": args.threshold_delta,
+        "signal_source": args.signal_source, "soft_mask_scale": args.soft_mask_scale,
+        "asgml_mode": args.asgml_mode,
+    }
+    for key, val in asgml_overrides.items():
+        if val is not None:
+            config["asgml"][key] = val
 
     # Override epochs if specified
     if args.epochs is not None:
@@ -984,8 +1019,11 @@ def main():
         output_dir = Path(args.resume).parent
         exp_name = output_dir.name
     else:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        exp_name = f"{config['dataset']['name']}_{args.mode}_{timestamp}"
+        if args.exp_name:
+            exp_name = args.exp_name
+        else:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            exp_name = f"{config['dataset']['name']}_{args.mode}_{timestamp}"
         output_dir = Path(args.output_dir) / exp_name
         output_dir.mkdir(parents=True, exist_ok=True)
 
