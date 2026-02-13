@@ -585,6 +585,21 @@ def train_epoch(
             # Get update mask and staleness values from scheduler
             update_mask = scheduler.get_update_mask()
 
+            # Diagnostic logging for debugging ASGML activation
+            if batch_idx < 5 or batch_idx % 20 == 0:
+                if scheduler.mode == "continuous":
+                    logger.debug(
+                        f"[Step {global_step}] mode=continuous "
+                        f"scales={scheduler.current_continuous_scales} "
+                        f"mask={update_mask}"
+                    )
+                else:
+                    logger.debug(
+                        f"[Step {global_step}] tau={scheduler.current_tau} "
+                        f"mask={update_mask} "
+                        f"speeds={scheduler.dynamics.compute_learning_speed()}"
+                    )
+
             # ========== Compute Loss ==========
             loss, loss_dict = loss_fn(
                 logits, unimodal_logits, targets, update_mask
@@ -662,13 +677,24 @@ def train_epoch(
                             staleness_vals[m],
                             grad_scales[m],
                         )
+            elif scheduler.mode == "continuous":
+                # Continuous probe-guided gradient scaling
+                # Apply EMA-smoothed scales to encoder gradients every step
+                noise_sigma = config["asgml"].get("continuous_noise_sigma", 0.0)
+                for m in modalities:
+                    scale = scheduler.current_continuous_scales[m]
+                    for name, param in model.named_parameters():
+                        if f"encoders.{m}" in name and param.grad is not None:
+                            param.grad.data.mul_(scale)
+                            if noise_sigma > 0 and len(param.grad.size()) == 4:
+                                noise = torch.zeros_like(param.grad).normal_(
+                                    0, param.grad.std().item() * noise_sigma + 1e-8
+                                )
+                                param.grad.data.add_(noise)
             else:
                 # Frequency mode: reduce encoder gradients for non-updating modalities
-                # Options:
-                #   - hard_mask=True (default): Zero all encoder gradients (original behavior)
-                #   - hard_mask=False: Scale gradients by small factor to preserve some signal
                 hard_mask = config["asgml"].get("hard_frequency_mask", False)
-                soft_scale = config["asgml"].get("soft_mask_scale", 0.1)  # 10% of gradient
+                soft_scale = config["asgml"].get("soft_mask_scale", 0.1)
 
                 for m in modalities:
                     if not update_mask[m]:
@@ -677,8 +703,6 @@ def train_epoch(
                                 if hard_mask:
                                     param.grad.data.zero_()
                                 else:
-                                    # Soft masking: reduce but don't eliminate gradient
-                                    # This preserves fusion-path learning signal
                                     param.grad.data.mul_(soft_scale)
 
         # ========== Optimizer Step ==========
@@ -703,12 +727,30 @@ def train_epoch(
         metric_tracker.update(logits, targets)
 
         # ========== Probe Training & Evaluation (periodic) ==========
-        if (batch_idx + 1) % eval_freq == 0:
-            # Train probes on current features (DETACHED - safe)
-            probe_manager.train_probes(features, targets, num_steps=probe_train_steps)
+        # Continuous mode uses more frequent probe evaluations
+        if scheduler.mode == "continuous":
+            current_eval_freq = config["asgml"].get("continuous_eval_freq", 20)
+            current_probe_steps = config["asgml"].get("continuous_probe_train_steps", 10)
+        else:
+            current_eval_freq = eval_freq
+            current_probe_steps = probe_train_steps
 
-            # Evaluate probes
-            probe_results = probe_manager.evaluate_probes(features, targets)
+        if (batch_idx + 1) % current_eval_freq == 0:
+            # Split batch: train probes on first half, evaluate on second half
+            # This prevents probe overfitting (e.g., audio probe hitting 100%
+            # on training data while test accuracy is only ~56%)
+            batch_size = targets.size(0)
+            split = batch_size // 2
+            train_features = {m: f[:split] for m, f in features.items()}
+            train_targets = targets[:split]
+            eval_features = {m: f[split:] for m, f in features.items()}
+            eval_targets = targets[split:]
+
+            # Train probes on first half (DETACHED - safe)
+            probe_manager.train_probes(train_features, train_targets, num_steps=current_probe_steps)
+
+            # Evaluate probes on second half (unseen by probe during training)
+            probe_results = probe_manager.evaluate_probes(eval_features, eval_targets)
             utilization_gap = probe_manager.compute_utilization_gap()
             dominant = probe_manager.get_dominant_modality()
 
@@ -716,7 +758,21 @@ def train_epoch(
             if scheduler.adaptation == "adaptive":
                 signal_source = config["asgml"].get("signal_source", "dual")
 
-                if signal_source == "dual":
+                if scheduler.mode == "continuous":
+                    # Continuous mode: compute scales from probe utilization
+                    util_scores = probe_manager.get_utilization_scores(use_ema=True)
+                    new_scales = scheduler.get_continuous_scales(
+                        utilization_scores=util_scores,
+                        alpha=config["asgml"].get("continuous_alpha", 0.5),
+                        scale_max=config["asgml"].get("continuous_scale_max", 2.0),
+                    )
+                    scheduler.update_continuous_scales(new_scales)
+                    if util_scores:
+                        scheduler.set_dominant_modality(
+                            max(util_scores, key=util_scores.get)
+                        )
+
+                elif signal_source == "dual":
                     # Design doc method: S_i(t) = β·G_i(t) + (1-β)·D_i(t)
                     # Uses gradient magnitude + loss descent rate (no probes)
                     learning_speeds = scheduler.dynamics.compute_learning_speed()
@@ -780,6 +836,15 @@ def train_epoch(
                 learning_speeds = scheduler.dynamics.compute_learning_speed()
                 for m in modalities:
                     writer.add_scalar(f"dynamics/learning_speed_{m}", learning_speeds[m], global_step)
+
+                # Log continuous mode scales
+                if scheduler.mode == "continuous":
+                    for m in modalities:
+                        writer.add_scalar(
+                            f"continuous/scale_{m}",
+                            scheduler.current_continuous_scales[m],
+                            global_step,
+                        )
 
         # ========== Logging ==========
         pbar.set_postfix({
@@ -970,8 +1035,14 @@ def main():
     parser.add_argument("--soft-mask-scale", type=float, default=None,
                         help="Override ASGML soft_mask_scale")
     parser.add_argument("--asgml-mode", type=str, default=None,
-                        choices=["frequency", "staleness"],
-                        help="Override ASGML asgml_mode (frequency or staleness)")
+                        choices=["frequency", "staleness", "continuous"],
+                        help="Override ASGML asgml_mode")
+    parser.add_argument("--continuous-alpha", type=float, default=None,
+                        help="Override continuous mode scaling strength (0-1)")
+    parser.add_argument("--continuous-scale-max", type=float, default=None,
+                        help="Override continuous mode maximum boost scale")
+    parser.add_argument("--continuous-noise-sigma", type=float, default=None,
+                        help="Override continuous mode Gaussian noise sigma")
     parser.add_argument("--exp-name", type=str, default=None,
                         help="Override experiment name (default: auto-generated)")
     args = parser.parse_args()
@@ -993,6 +1064,9 @@ def main():
         "lambda_comp": args.lambda_comp, "threshold_delta": args.threshold_delta,
         "signal_source": args.signal_source, "soft_mask_scale": args.soft_mask_scale,
         "asgml_mode": args.asgml_mode,
+        "continuous_alpha": args.continuous_alpha,
+        "continuous_scale_max": args.continuous_scale_max,
+        "continuous_noise_sigma": args.continuous_noise_sigma,
     }
     for key, val in asgml_overrides.items():
         if val is not None:

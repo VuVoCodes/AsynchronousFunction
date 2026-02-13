@@ -279,9 +279,10 @@ class ASGMLScheduler:
     """
     Schedules modality updates based on learning dynamics.
 
-    Supports two modes:
+    Supports three modes:
     - FREQUENCY: Skip updates for dominant modality (every k steps)
     - STALENESS: Apply stale gradients to dominant modality
+    - CONTINUOUS: Probe-guided continuous gradient scaling (smooth modulation)
 
     The scheduler can be:
     - FIXED: Use predetermined ratios/staleness values
@@ -291,7 +292,7 @@ class ASGMLScheduler:
     def __init__(
         self,
         modalities: List[str],
-        mode: str = "frequency",  # "frequency" or "staleness"
+        mode: str = "frequency",  # "frequency", "staleness", or "continuous"
         adaptation: str = "fixed",  # "fixed" or "adaptive"
         # Fixed mode parameters
         fixed_ratio: int = 2,  # Dominant updates every `fixed_ratio` steps
@@ -309,7 +310,8 @@ class ASGMLScheduler:
         """
         Args:
             modalities: List of modality names
-            mode: "frequency" (skip updates) or "staleness" (use old gradients)
+            mode: "frequency" (skip updates), "staleness" (use old gradients),
+                  or "continuous" (probe-guided gradient scaling)
             adaptation: "fixed" (predetermined) or "adaptive" (probe-driven)
             fixed_ratio: For fixed frequency mode, update dominant every k steps
             fixed_staleness: For fixed staleness mode, use τ-step-old gradients
@@ -355,6 +357,10 @@ class ASGMLScheduler:
 
         # Cache dominant modality (updated by external probe signals)
         self._dominant_modality: Optional[str] = None
+
+        # Continuous mode: EMA-smoothed gradient scales per modality
+        self.current_continuous_scales: Dict[str, float] = {m: 1.0 for m in modalities}
+        self.continuous_scale_ema: float = 0.3
 
     def set_dominant_modality(self, modality: str) -> None:
         """
@@ -402,9 +408,10 @@ class ASGMLScheduler:
         Returns:
             Dict mapping modality names to whether they should update
         """
-        if self.mode == "staleness":
-            # In staleness mode, all modalities always update
-            # (but dominant uses stale gradients - handled separately)
+        if self.mode in ("staleness", "continuous"):
+            # In staleness/continuous mode, all modalities always update
+            # Staleness: dominant uses stale gradients (handled separately)
+            # Continuous: gradients are scaled, not skipped
             return {m: True for m in self.modalities}
 
         # Frequency mode: check if each modality should update
@@ -480,6 +487,82 @@ class ASGMLScheduler:
 
         return scales
 
+    def get_continuous_scales(
+        self,
+        utilization_scores: Dict[str, float],
+        alpha: float = 0.5,
+        scale_max: float = 2.0,
+    ) -> Dict[str, float]:
+        """
+        Compute continuous gradient scaling factors from probe utilization scores.
+
+        Boosts weak modality gradients proportional to the utilization gap while
+        leaving the dominant modality unchanged. This is the continuous analog of
+        ASGML's frequency mode (which gives more updates to weak modalities).
+
+        Parameters
+        ----------
+        utilization_scores : Dict[str, float]
+            Probe accuracy per modality (from ProbeManager.get_utilization_scores()).
+            Higher values indicate more dominant/better-utilized modalities.
+        alpha : float
+            Boost strength. Controls how aggressively weak modalities are
+            boosted. 0.0 = no boost, 1.0 = maximum boost (up to scale_max).
+        scale_max : float
+            Maximum gradient scale for the weakest modality.
+            Prevents excessive gradient amplification.
+
+        Returns
+        -------
+        Dict[str, float]
+            Gradient scale factor per modality. Values in [1.0, scale_max].
+            Dominant modalities get 1.0, weak modalities get boosted.
+        """
+        if not utilization_scores:
+            return {m: 1.0 for m in self.modalities}
+
+        max_score = max(utilization_scores.values())
+        min_score = min(utilization_scores.values())
+        util_gap = max_score - min_score
+
+        scales = {}
+        for m in self.modalities:
+            if util_gap < 1e-8:
+                scales[m] = 1.0
+            else:
+                rel_weakness = 1.0 - (utilization_scores[m] - min_score) / util_gap
+                raw_scale = 1.0 + alpha * rel_weakness
+                scales[m] = min(raw_scale, scale_max)
+
+        return scales
+
+    def update_continuous_scales(
+        self,
+        new_scales: Dict[str, float],
+    ) -> Dict[str, float]:
+        """
+        Update continuous gradient scales with EMA smoothing.
+
+        EMA smoothing prevents abrupt scale changes between probe evaluation
+        intervals, which can destabilize training.
+
+        Parameters
+        ----------
+        new_scales : Dict[str, float]
+            New target scales from get_continuous_scales().
+
+        Returns
+        -------
+        Dict[str, float]
+            EMA-smoothed current scales.
+        """
+        ema = self.continuous_scale_ema
+        for m in self.modalities:
+            old = self.current_continuous_scales[m]
+            new = new_scales.get(m, 1.0)
+            self.current_continuous_scales[m] = ema * new + (1 - ema) * old
+        return self.current_continuous_scales.copy()
+
     def step(self) -> None:
         """Increment step counter (call at end of each training step)."""
         self.current_step += 1
@@ -517,6 +600,7 @@ class ASGMLScheduler:
         """Reset scheduler state (call at start of training)."""
         self.current_step = 0
         self.current_tau = {m: 1.0 for m in self.modalities}
+        self.current_continuous_scales = {m: 1.0 for m in self.modalities}
         self.dynamics.reset()
         self.staleness_buffer.clear()
         self._dominant_modality = None

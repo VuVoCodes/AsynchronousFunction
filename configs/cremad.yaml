@@ -42,7 +42,7 @@ asgml:
   enabled: true
 
   # Mode settings
-  asgml_mode: frequency  # "frequency" or "staleness" (for adaptive mode)
+  asgml_mode: frequency  # "frequency", "staleness", or "continuous" (for adaptive mode)
 
   # Staleness/frequency bounds
   tau_base: 2.0
@@ -76,6 +76,14 @@ asgml:
   probe_lr: 0.001
   eval_freq: 100  # Evaluate probes every N batches
   probe_train_steps: 50  # Steps to train probe per evaluation
+
+  # Continuous mode parameters (probe-guided gradient scaling)
+  continuous_alpha: 0.5       # Boost strength (0=none, 1=max boost of weak modality)
+  continuous_scale_max: 2.0   # Maximum gradient scale for weakest modality
+  continuous_noise_sigma: 0.0 # Gaussian noise injection (0=off)
+  continuous_scale_ema: 0.3   # EMA smoothing for scale transitions
+  continuous_eval_freq: 20    # More frequent probe evaluation for continuous mode
+  continuous_probe_train_steps: 10  # Reduced probe steps (5x more frequent evals)
 
 # Logging
 logging:
