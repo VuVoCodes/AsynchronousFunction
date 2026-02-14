@@ -448,6 +448,175 @@ def train_epoch_miles(
     return metrics
 
 
+def train_epoch_inforeg(
+    model: nn.Module,
+    dataloader: DataLoader,
+    optimizer: optim.Optimizer,
+    device: torch.device,
+    epoch: int,
+    config: dict,
+    logger,
+    writer: SummaryWriter = None,
+    prev_epoch_weights: dict = None,
+    fisher_traces: list = None,
+    beta: float = 1.0,
+    K: float = 0.05,
+):
+    """
+    Train for one epoch in InfoReg mode (Huang et al., CVPR 2025).
+
+    InfoReg slows information acquisition of dominant modalities during the
+    prime learning window by adding a weight regularization term.
+
+    Parameters
+    ----------
+    prev_epoch_weights : dict
+        {modality: {name: tensor}} weights from start of previous epoch.
+    fisher_traces : list
+        List of dicts {modality: Tr(F)} for past epochs.
+    beta : float
+        Regulation strength (controls α = β * Δ_m).
+    K : float
+        Prime learning window threshold on relative Tr(F) change rate.
+    """
+    model.train()
+    criterion = nn.CrossEntropyLoss()
+    softmax = nn.Softmax(dim=1)
+
+    loss_meter = AverageMeter("Loss")
+    metric_tracker = MetricTracker(config["evaluation"]["metrics"])
+    modalities = config["dataset"]["modalities"]
+
+    # Track unimodal metrics
+    unimodal_trackers = {m: MetricTracker(['accuracy']) for m in modalities}
+
+    gamma = config["asgml"].get("gamma", 1.0)
+
+    # Accumulate gradient norms for Fisher trace computation
+    grad_norm_sq_accum = {m: 0.0 for m in modalities}
+    num_batches = 0
+
+    # Detect PLW: need at least 2 previous epochs of Fisher traces
+    in_plw = {m: False for m in modalities}
+    if fisher_traces is not None and len(fisher_traces) >= 2:
+        for m in modalities:
+            tr_prev = fisher_traces[-1].get(m, 0.0)
+            tr_prev2 = fisher_traces[-2].get(m, 0.0)
+            if tr_prev > 1e-10:
+                plw_rate = (tr_prev - tr_prev2) / tr_prev
+                in_plw[m] = plw_rate > K
+
+    pbar = tqdm(dataloader, desc=f"Epoch {epoch}")
+
+    for batch_idx, batch in enumerate(pbar):
+        global_step = (epoch - 1) * len(dataloader) + batch_idx
+
+        inputs = {m: batch[m].to(device, non_blocking=True) for m in modalities}
+        targets = batch["label"].to(device, non_blocking=True)
+
+        optimizer.zero_grad()
+
+        # Forward pass
+        logits, unimodal_logits, _ = model(inputs, return_features=True)
+
+        # Compute losses (multimodal + unimodal, same as MILES)
+        loss_fusion = criterion(logits, targets)
+        loss_unimodal = {}
+        for m in modalities:
+            loss_unimodal[m] = criterion(unimodal_logits[m], targets)
+
+        loss = loss_fusion + gamma * sum(loss_unimodal.values())
+
+        # Compute performance scores and gap (Eq. 8-10 in InfoReg)
+        scores = {}
+        for m in modalities:
+            probs = softmax(unimodal_logits[m].detach())
+            scores[m] = -torch.log(probs[range(len(targets)), targets] + 1e-8).mean().item()
+
+        # Lower score = better performance (it's negative log-likelihood)
+        # InfoReg: dominant = lowest score (best performer)
+        # Compute gap for dominant modality (Eq. 10)
+        dominant_m = min(scores, key=scores.get)
+        # Performance gap Δ_m for the dominant modality (Eq. 10)
+        non_dominant_scores = [scores[m] for m in modalities if m != dominant_m]
+        if non_dominant_scores:
+            delta_dominant = (sum(non_dominant_scores) / len(non_dominant_scores)) - scores[dominant_m]
+        else:
+            delta_dominant = 0.0
+
+        # Add regulation term for dominant modality in PLW (Eq. 12)
+        regulation_loss = torch.tensor(0.0, device=device)
+        if prev_epoch_weights is not None and delta_dominant > 0:
+            if in_plw.get(dominant_m, False) or epoch <= 2:
+                # α = β * Δ_m (Eq. 16)
+                alpha_reg = beta * delta_dominant
+                reg = torch.tensor(0.0, device=device)
+                for name, param in model.named_parameters():
+                    if f"encoders.{dominant_m}" in name and name in prev_epoch_weights.get(dominant_m, {}):
+                        prev_w = prev_epoch_weights[dominant_m][name].to(device)
+                        reg = reg + torch.sum((param - prev_w) ** 2)
+                regulation_loss = (alpha_reg / 2.0) * reg
+                loss = loss + regulation_loss
+
+        # Backward pass
+        loss.backward()
+
+        # Accumulate gradient norms for Fisher trace
+        for m in modalities:
+            gnorm_sq = 0.0
+            for name, param in model.named_parameters():
+                if f"encoders.{m}" in name and param.grad is not None:
+                    gnorm_sq += param.grad.data.norm(2).item() ** 2
+            grad_norm_sq_accum[m] += gnorm_sq
+        num_batches += 1
+
+        optimizer.step()
+
+        # Update metrics
+        loss_meter.update(loss.item(), targets.size(0))
+        metric_tracker.update(logits, targets)
+        for m in modalities:
+            unimodal_trackers[m].update(unimodal_logits[m], targets)
+
+        pbar.set_postfix({"loss": f"{loss_meter.avg:.4f}"})
+
+        # Logging
+        if writer is not None and batch_idx % config["logging"]["log_interval"] == 0:
+            writer.add_scalar("train/loss", loss.item(), global_step)
+            writer.add_scalar("train/fusion_loss", loss_fusion.item(), global_step)
+            writer.add_scalar("train/regulation_loss", regulation_loss.item(), global_step)
+            for m in modalities:
+                writer.add_scalar(f"train/unimodal_loss_{m}", loss_unimodal[m].item(), global_step)
+                writer.add_scalar(f"inforeg/score_{m}", scores[m], global_step)
+            writer.add_scalar("inforeg/in_plw_dominant", float(in_plw.get(dominant_m, False)), global_step)
+            writer.add_scalar("inforeg/delta_dominant", delta_dominant, global_step)
+
+    # Compute Fisher trace for this epoch
+    epoch_fisher = {}
+    for m in modalities:
+        epoch_fisher[m] = grad_norm_sq_accum[m] / max(num_batches, 1)
+
+    # Log Fisher traces
+    if writer is not None:
+        for m in modalities:
+            writer.add_scalar(f"inforeg/fisher_trace_{m}", epoch_fisher[m], epoch)
+            writer.add_scalar(f"inforeg/in_plw_{m}", float(in_plw[m]), epoch)
+
+    # Compute epoch metrics
+    metrics = metric_tracker.compute()
+    metrics["loss"] = loss_meter.avg
+    metrics["fisher_traces"] = epoch_fisher
+    for m in modalities:
+        unimodal_metrics = unimodal_trackers[m].compute()
+        metrics[f"unimodal_acc_{m}"] = unimodal_metrics['accuracy']
+
+    # Log PLW status
+    plw_str = ", ".join(f"{m}={'PLW' if in_plw[m] else 'no'}" for m in modalities)
+    logger.info(f"InfoReg epoch {epoch}: {plw_str}, dominant={dominant_m}, Δ={delta_dominant:.4f}")
+
+    return metrics
+
+
 def apply_ogm_ge(
     model: nn.Module,
     unimodal_logits: dict,
@@ -985,7 +1154,7 @@ def main():
         "--mode",
         type=str,
         default="baseline",
-        choices=["baseline", "frequency", "staleness", "adaptive", "miles"],
+        choices=["baseline", "frequency", "staleness", "adaptive", "miles", "inforeg"],
         help="Training mode",
     )
     parser.add_argument("--fixed-ratio", type=int, default=2, help="Fixed frequency ratio (for frequency mode)")
@@ -995,6 +1164,16 @@ def main():
                         help="MILES: τ threshold for triggering LR adjustment (δ > τ)")
     parser.add_argument("--miles-reduction", type=float, default=0.5,
                         help="MILES: μ factor to reduce dominant modality's LR")
+    # InfoReg-specific arguments
+    parser.add_argument("--inforeg-beta", type=float, default=0.9,
+                        help="InfoReg: β regulation strength (α = β * Δ_m)")
+    parser.add_argument("--inforeg-K", type=float, default=0.04,
+                        help="InfoReg: K threshold for PLW detection on relative Tr(F) change")
+    # Dataset overrides
+    parser.add_argument("--fps", type=int, default=None,
+                        help="Override dataset fps (frames per second extraction rate)")
+    parser.add_argument("--num-frames", type=int, default=None,
+                        help="Override dataset num_frames (frames sampled per video)")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--device", type=str, default="cuda", help="Device to use")
     parser.add_argument("--output-dir", type=str, default="outputs", help="Output directory")
@@ -1006,6 +1185,7 @@ def main():
         help="Per-modality LR scales as 'modality:scale,...' (e.g., 'audio:0.5,visual:1.0')"
     )
     parser.add_argument("--epochs", type=int, default=None, help="Override epochs from config")
+    parser.add_argument("--lr", type=float, default=None, help="Override learning rate from config")
     parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint to resume from")
     # OGM-GE arguments (orthogonal to ASGML mode)
     parser.add_argument("--ogm-ge", action="store_true",
@@ -1051,8 +1231,14 @@ def main():
     with open(args.config, "r") as f:
         config = yaml.safe_load(f)
 
+    # Override dataset fps/num_frames from CLI
+    if args.fps is not None:
+        config["dataset"]["fps"] = args.fps
+    if args.num_frames is not None:
+        config["dataset"]["num_frames"] = args.num_frames
+
     # Configure ASGML based on mode
-    if args.mode == "baseline":
+    if args.mode in ("baseline", "miles", "inforeg"):
         config["asgml"]["enabled"] = False
     else:
         config["asgml"]["enabled"] = True
@@ -1075,6 +1261,10 @@ def main():
     # Override epochs if specified
     if args.epochs is not None:
         config["training"]["epochs"] = args.epochs
+
+    # Override learning rate if specified
+    if args.lr is not None:
+        config["training"]["lr"] = args.lr
 
     # Parse per-modality LR scales
     modality_lr_scales = None
@@ -1112,6 +1302,8 @@ def main():
         "modality_lr_scales": modality_lr_scales,
         "miles_threshold": args.miles_threshold,
         "miles_reduction": args.miles_reduction,
+        "inforeg_beta": args.inforeg_beta,
+        "inforeg_K": args.inforeg_K,
     }
     with open(output_dir / "config.yaml", "w") as f:
         yaml.dump(config_copy, f)
@@ -1265,6 +1457,126 @@ def main():
         logger.info(f"Training complete. Best accuracy: {best_acc:.4f}")
         writer.close()
         return  # Exit early for MILES mode
+
+    # ========== InfoReg Mode: Separate Training Loop ==========
+    if args.mode == "inforeg":
+        logger.info(f"InfoReg mode: β={args.inforeg_beta}, K={args.inforeg_K}")
+
+        # InfoReg uses SGD with lr=0.002, StepLR(step=30, gamma=0.1) per paper
+        optimizer = torch.optim.SGD(
+            model.parameters(),
+            lr=config["training"]["lr"],
+            momentum=config["training"].get("momentum", 0.9),
+            weight_decay=config["training"].get("weight_decay", 1e-4),
+        )
+        lr_scheduler = torch.optim.lr_scheduler.StepLR(
+            optimizer,
+            step_size=config["training"].get("step_size", 30),
+            gamma=config["training"].get("gamma", 0.1),
+        )
+
+        # Resume from checkpoint if specified
+        start_epoch = 1
+        best_acc = 0.0
+        fisher_traces = []
+        prev_epoch_weights = None
+        if args.resume and Path(args.resume).exists():
+            logger.info(f"Resuming from checkpoint: {args.resume}")
+            checkpoint = torch.load(args.resume, map_location=device)
+            model.load_state_dict(checkpoint["model_state_dict"])
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            start_epoch = checkpoint["epoch"] + 1
+            best_acc = checkpoint.get("best_acc", 0.0)
+            fisher_traces = checkpoint.get("fisher_traces", [])
+            prev_epoch_weights = checkpoint.get("prev_epoch_weights", None)
+            for _ in range(checkpoint["epoch"]):
+                lr_scheduler.step()
+            logger.info(f"Resumed from epoch {checkpoint['epoch']}, best_acc={best_acc:.4f}")
+
+        # InfoReg Training Loop
+        for epoch in range(start_epoch, config["training"]["epochs"] + 1):
+            # Save current epoch weights for regulation term
+            prev_epoch_weights = {}
+            for m in modalities:
+                prev_epoch_weights[m] = {
+                    name: param.data.clone().cpu()
+                    for name, param in model.named_parameters()
+                    if f"encoders.{m}" in name
+                }
+
+            # Train
+            train_metrics = train_epoch_inforeg(
+                model, train_loader, optimizer, device, epoch, config, logger,
+                writer=writer,
+                prev_epoch_weights=prev_epoch_weights,
+                fisher_traces=fisher_traces,
+                beta=args.inforeg_beta,
+                K=args.inforeg_K,
+            )
+
+            # Update Fisher trace history
+            if "fisher_traces" in train_metrics:
+                fisher_traces.append(train_metrics["fisher_traces"])
+
+            # Step LR scheduler
+            lr_scheduler.step()
+
+            # Evaluate
+            test_metrics = evaluate_miles(model, test_loader, device, config)
+
+            # Log
+            log_str = (
+                f"Epoch {epoch}: "
+                f"Train Loss={train_metrics['loss']:.4f}, "
+                f"Train Acc={train_metrics['accuracy']:.4f}, "
+                f"Test Acc={test_metrics['accuracy']:.4f}, "
+                f"Test F1={test_metrics['f1_macro']:.4f}"
+            )
+            for m in modalities:
+                log_str += f", {m}_acc={test_metrics.get(f'unimodal_acc_{m}', 0):.4f}"
+            logger.info(log_str)
+
+            # Tensorboard logging
+            writer.add_scalar("test/accuracy", test_metrics["accuracy"], epoch)
+            writer.add_scalar("test/f1_macro", test_metrics["f1_macro"], epoch)
+            writer.add_scalar("test/loss", test_metrics["loss"], epoch)
+            if "utilization_gap" in test_metrics:
+                writer.add_scalar("test/utilization_gap", test_metrics["utilization_gap"], epoch)
+            for m in modalities:
+                writer.add_scalar(f"test/unimodal_acc_{m}", test_metrics.get(f"unimodal_acc_{m}", 0), epoch)
+
+            # Save checkpoint
+            if test_metrics["accuracy"] > best_acc:
+                best_acc = test_metrics["accuracy"]
+                best_checkpoint = {
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "best_acc": best_acc,
+                    "fisher_traces": fisher_traces,
+                    "prev_epoch_weights": prev_epoch_weights,
+                    "config": config_copy,
+                }
+                torch.save(best_checkpoint, output_dir / "best_model.pt")
+                logger.info(f"New best model saved with accuracy: {best_acc:.4f}")
+
+            # Periodic checkpoint
+            if epoch % config["logging"]["save_interval"] == 0:
+                checkpoint_data = {
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "best_acc": best_acc,
+                    "fisher_traces": fisher_traces,
+                    "prev_epoch_weights": prev_epoch_weights,
+                    "config": config_copy,
+                }
+                torch.save(checkpoint_data, output_dir / f"checkpoint_epoch{epoch}.pt")
+
+        # Final summary
+        logger.info(f"Training complete. Best accuracy: {best_acc:.4f}")
+        writer.close()
+        return  # Exit early for InfoReg mode
 
     # ========== Standard ASGML Modes ==========
     # Create optimizer and scheduler
