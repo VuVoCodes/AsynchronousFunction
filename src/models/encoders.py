@@ -201,3 +201,40 @@ class TextEncoder(nn.Module):
         # Concatenate forward and backward hidden states
         hidden = torch.cat([hidden[-2], hidden[-1]], dim=1)
         return self.projector(hidden)
+
+
+class MLPEncoder(nn.Module):
+    """MLP encoder for pre-extracted features (e.g., CMU-MOSEI).
+
+    Matches InfoReg's TriModalClassifier encoder architecture:
+    Linear → ReLU → Dropout → Linear → ReLU
+    """
+
+    def __init__(
+        self,
+        input_dim: int,
+        feature_dim: int = 512,
+        dropout: float = 0.3,
+    ):
+        super().__init__()
+        self.feature_dim = feature_dim
+
+        self.net = nn.Sequential(
+            nn.Linear(input_dim, feature_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(feature_dim, feature_dim),
+            nn.ReLU(),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: Pre-extracted features of shape (B, D) or (B, T, D).
+               If 3D, mean-pools over the temporal dimension first.
+        Returns:
+            Feature tensor of shape (B, feature_dim)
+        """
+        if x.dim() == 3:
+            x = x.mean(dim=1)
+        return self.net(x)

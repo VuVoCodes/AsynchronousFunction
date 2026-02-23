@@ -52,7 +52,7 @@ from tqdm import tqdm
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.models import MultimodalModel, ProbeManager
-from src.datasets import CREMADDataset, AVEDataset, KineticsSoundsDataset
+from src.datasets import CREMADDataset, AVEDataset, KineticsSoundsDataset, MOSEIDataset
 from src.losses import (
     ASGMLLoss,
     ASGMLScheduler,
@@ -83,9 +83,14 @@ def get_dataset(config: dict, split: str):
         num_frames = config["dataset"].get("num_frames", 1)
         return CREMADDataset(root=root, split=split, fps=fps, num_frames=num_frames)
     elif name == "ave":
-        return AVEDataset(root=root, split=split)
+        num_frames = config["dataset"].get("num_frames", 3)
+        return AVEDataset(root=root, split=split, num_frames=num_frames)
     elif name == "kinetics_sounds":
         return KineticsSoundsDataset(root=root, split=split)
+    elif name == "mosei":
+        # MOSEI uses 'valid' instead of 'test' for validation, and 'test' for final eval
+        mosei_split = split if split == "train" else "test"
+        return MOSEIDataset(root=root, split=mosei_split)
     else:
         raise ValueError(f"Unknown dataset: {name}")
 
@@ -1346,14 +1351,37 @@ def main():
 
     modalities = config["dataset"]["modalities"]
 
+    # For MOSEI with MLP backbone, detect actual feature dims from dataset
+    if config["model"]["backbone"] == "mlp" and config["dataset"]["name"] == "mosei":
+        config["dataset"]["text_dim"] = train_dataset.text_dim
+        config["dataset"]["audio_dim"] = train_dataset.audio_dim
+        config["dataset"]["visual_dim"] = train_dataset.visual_dim
+        logger.info(
+            f"MOSEI feature dims: text={train_dataset.text_dim}, "
+            f"audio={train_dataset.audio_dim}, vision={train_dataset.visual_dim}"
+        )
+
     # Create model
+    # Build encoder config per modality
+    encoder_config = {}
+    backbone = config["model"]["backbone"]
+    for m in modalities:
+        enc_cfg = {
+            "backbone": backbone,
+            "pretrained": config["model"]["pretrained"],
+        }
+        # For MLP backbone (pre-extracted features), pass input dimensions
+        if backbone == "mlp":
+            dim_key_map = {"text": "text_dim", "audio": "audio_dim", "vision": "visual_dim", "visual": "visual_dim"}
+            dim_key = dim_key_map.get(m, f"{m}_dim")
+            enc_cfg["input_dim"] = config["dataset"].get(dim_key, 300)
+            enc_cfg["dropout"] = config["model"].get("dropout", 0.3)
+        encoder_config[m] = enc_cfg
+
     model = MultimodalModel(
         modalities=modalities,
         num_classes=config["dataset"]["num_classes"],
-        encoder_config={
-            m: {"backbone": config["model"]["backbone"], "pretrained": config["model"]["pretrained"]}
-            for m in modalities
-        },
+        encoder_config=encoder_config,
         fusion_type=config["model"]["fusion_type"],
         feature_dim=config["model"]["feature_dim"],
         fusion_dim=config["model"]["fusion_dim"],
