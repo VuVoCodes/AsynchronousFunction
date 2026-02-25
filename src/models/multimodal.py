@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 from typing import Dict, List, Optional, Tuple
 
-from .encoders import AudioEncoder, VisualEncoder, TextEncoder
+from .encoders import AudioEncoder, VisualEncoder, TextEncoder, MLPEncoder
 from .fusion import ConcatFusion, GatedFusion, SumFusion
 
 
@@ -69,15 +69,25 @@ class MultimodalModel(nn.Module):
         self, modality: str, config: Dict, feature_dim: int
     ) -> nn.Module:
         """Create encoder for a specific modality."""
+        backbone = config.get("backbone", "resnet18")
+
+        # MLP encoder for pre-extracted features (e.g., MOSEI)
+        if backbone == "mlp":
+            return MLPEncoder(
+                input_dim=config.get("input_dim", 300),
+                feature_dim=feature_dim,
+                dropout=config.get("dropout", 0.3),
+            )
+
         if modality == "audio":
             return AudioEncoder(
-                backbone=config.get("backbone", "resnet18"),
+                backbone=backbone,
                 pretrained=config.get("pretrained", True),
                 feature_dim=feature_dim,
             )
         elif modality == "visual":
             return VisualEncoder(
-                backbone=config.get("backbone", "resnet18"),
+                backbone=backbone,
                 pretrained=config.get("pretrained", True),
                 feature_dim=feature_dim,
             )

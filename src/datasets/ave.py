@@ -1,195 +1,158 @@
 """
-AVE Dataset for audio-visual event localization.
+AVE Dataset for audio-visual event classification.
 
-AVE contains 4,143 10-second videos across 28 event classes.
+AVE contains ~4,143 10-second videos across 28 event classes.
+Uses OGM-GE-compatible format: pre-computed pickle spectrograms + extracted frames.
 
 Reference:
 Tian et al., "Audio-Visual Event Localization in Unconstrained Videos"
 ECCV 2018
+
+Expected directory structure (created by scripts/prepare_ave.py):
+    root/
+        visual/{video_id}/frame_00001.jpg, ...
+        audio_spec/{video_id}.pkl
+        stat.txt                    # sorted class names
+        my_train.txt                # class_index,video_id
+        my_test.txt                 # class_index,video_id
 """
 
+import copy
+import csv
 import os
+import pickle
+from typing import Dict
+
 import torch
-import numpy as np
-import librosa
 from PIL import Image
 from torch.utils.data import Dataset
-from typing import Dict, Optional, Callable
-import torchvision.transforms as transforms
+from torchvision import transforms
 
 
 class AVEDataset(Dataset):
-    """
-    AVE Dataset for audio-visual event classification.
+    """AVE Dataset matching OGM-GE's data loading format.
 
-    Expected directory structure:
-    root/
-        video_frames/       # Extracted video frames
-        audio/              # Audio files
-        annotations/        # Train/test splits
+    Parameters
+    ----------
+    root : str
+        Root directory of the AVE dataset.
+    split : str
+        'train' or 'test'.
+    num_frames : int
+        Number of frames to sample per video.
     """
 
     def __init__(
         self,
         root: str,
         split: str = "train",
-        visual_transform: Optional[Callable] = None,
-        audio_transform: Optional[Callable] = None,
-        sr: int = 16000,
-        n_mels: int = 128,
         num_frames: int = 3,
     ):
-        """
-        Args:
-            root: Root directory of AVE dataset
-            split: 'train', 'val', or 'test'
-            visual_transform: Transform for visual input
-            audio_transform: Transform for audio spectrogram
-            sr: Audio sample rate
-            n_mels: Number of mel bands
-            num_frames: Number of frames to sample per video
-        """
         self.root = root
         self.split = split
-        self.sr = sr
-        self.n_mels = n_mels
         self.num_frames = num_frames
 
-        # Default transforms
-        if visual_transform is None:
-            self.visual_transform = transforms.Compose([
-                transforms.Resize((224, 224)),
-                transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=[0.485, 0.456, 0.406],
-                    std=[0.229, 0.224, 0.225]
-                ),
-            ])
-        else:
-            self.visual_transform = visual_transform
+        self.visual_path = os.path.join(root, "visual")
+        self.audio_spec_path = os.path.join(root, "audio_spec")
+        self.stat_path = os.path.join(root, "stat.txt")
+        self.train_txt = os.path.join(root, "my_train.txt")
+        self.test_txt = os.path.join(root, "my_test.txt")
 
-        self.audio_transform = audio_transform
+        # Load class names
+        self.classes = []
+        with open(self.stat_path) as f:
+            reader = csv.reader(f)
+            for row in reader:
+                self.classes.append(row[0])
+        self.classes = sorted(self.classes)
 
-        # Load class names and samples
-        self.classes = self._load_classes()
-        self.class_to_idx = {c: i for i, c in enumerate(self.classes)}
-        self.samples = self._load_samples()
+        # Load samples
+        csv_file = self.train_txt if split == "train" else self.test_txt
+        self.samples = []
+        self.data2class = {}
 
-    def _load_classes(self):
-        """Load list of event classes."""
-        # AVE has 28 classes - these should be loaded from dataset
-        # Placeholder list
-        return [
-            "Church bell", "Male speech", "Bark", "Fixed-wing aircraft",
-            "Race car", "Female speech", "Helicopter", "Violin",
-            "Flute", "Ukulele", "Frying", "Truck", "Shofar",
-            "Motorcycle", "Acoustic guitar", "Train horn", "Clock",
-            "Banjo", "Goat", "Baby cry", "Bus", "Chainsaw",
-            "Cat", "Horse", "Toilet flush", "Rodents", "Accordion",
-            "Mandolin"
-        ]
+        with open(csv_file) as f:
+            reader = csv.reader(f)
+            for item in reader:
+                if len(item) < 2:
+                    continue
+                class_idx = int(item[0])
+                video_id = item[1]
+                audio_path = os.path.join(self.audio_spec_path, video_id + ".pkl")
+                visual_dir = os.path.join(self.visual_path, video_id)
+                if os.path.exists(audio_path) and os.path.exists(visual_dir):
+                    self.samples.append(video_id)
+                    self.data2class[video_id] = class_idx
 
-    def _load_samples(self):
-        """Load list of samples for the split."""
-        samples = []
-
-        # Try to load from annotation file
-        anno_file = os.path.join(self.root, "annotations", f"{self.split}.txt")
-
-        if os.path.exists(anno_file):
-            with open(anno_file, 'r') as f:
-                for line in f:
-                    parts = line.strip().split()
-                    if len(parts) >= 2:
-                        video_id = parts[0]
-                        class_name = parts[1]
-                        if class_name in self.class_to_idx:
-                            samples.append((video_id, self.class_to_idx[class_name]))
-        else:
-            # Fallback: scan directories
-            video_dir = os.path.join(self.root, "video_frames")
-            if os.path.exists(video_dir):
-                for class_name in os.listdir(video_dir):
-                    class_path = os.path.join(video_dir, class_name)
-                    if os.path.isdir(class_path) and class_name in self.class_to_idx:
-                        for video_id in os.listdir(class_path):
-                            samples.append((
-                                os.path.join(class_name, video_id),
-                                self.class_to_idx[class_name]
-                            ))
-
-        return samples
-
-    def _load_audio(self, video_id: str) -> torch.Tensor:
-        """Load and convert audio to mel spectrogram."""
-        try:
-            audio_path = os.path.join(self.root, "audio", f"{video_id}.wav")
-
-            if not os.path.exists(audio_path):
-                return torch.zeros(1, 128, 128)
-
-            waveform, sr = librosa.load(audio_path, sr=self.sr)
-
-            mel_spec = librosa.feature.melspectrogram(
-                y=waveform, sr=sr, n_mels=self.n_mels
-            )
-            log_mel_spec = librosa.power_to_db(mel_spec, ref=np.max)
-
-            # Normalize
-            log_mel_spec = (log_mel_spec - log_mel_spec.min()) / (log_mel_spec.max() - log_mel_spec.min() + 1e-8)
-
-            spec_tensor = torch.FloatTensor(log_mel_spec).unsqueeze(0)
-            spec_tensor = torch.nn.functional.interpolate(
-                spec_tensor.unsqueeze(0), size=(128, 128), mode='bilinear'
-            ).squeeze(0)
-
-            return spec_tensor
-
-        except Exception as e:
-            print(f"Error loading audio for {video_id}: {e}")
-            return torch.zeros(1, 128, 128)
-
-    def _load_visual(self, video_id: str) -> torch.Tensor:
-        """Load and stack video frames."""
-        try:
-            frame_dir = os.path.join(self.root, "video_frames", video_id)
-
-            if not os.path.exists(frame_dir):
-                return torch.zeros(3 * self.num_frames, 224, 224)
-
-            frames = sorted([f for f in os.listdir(frame_dir) if f.endswith(('.jpg', '.png'))])
-
-            if not frames:
-                return torch.zeros(3 * self.num_frames, 224, 224)
-
-            # Sample frames uniformly
-            indices = np.linspace(0, len(frames) - 1, self.num_frames, dtype=int)
-
-            frame_tensors = []
-            for idx in indices:
-                frame_path = os.path.join(frame_dir, frames[idx])
-                image = Image.open(frame_path).convert('RGB')
-                frame_tensors.append(self.visual_transform(image))
-
-            # Stack frames along channel dimension
-            return torch.cat(frame_tensors, dim=0)
-
-        except Exception as e:
-            print(f"Error loading visual for {video_id}: {e}")
-            return torch.zeros(3 * self.num_frames, 224, 224)
+        print(f"AVE [{split}]: {len(self.samples)} samples, {len(self.classes)} classes")
 
     def __len__(self) -> int:
         return len(self.samples)
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        video_id, label = self.samples[idx]
+        video_id = self.samples[idx]
+        label = self.data2class[video_id]
 
-        audio = self._load_audio(video_id)
-        visual = self._load_visual(video_id)
+        # Load audio spectrogram from pickle
+        audio_path = os.path.join(self.audio_spec_path, video_id + ".pkl")
+        spectrogram = pickle.load(open(audio_path, "rb"))
+        if not isinstance(spectrogram, torch.Tensor):
+            spectrogram = torch.FloatTensor(spectrogram)
+        # Add channel dimension for ResNet18: (H, W) -> (1, H, W)
+        if spectrogram.dim() == 2:
+            spectrogram = spectrogram.unsqueeze(0)
+
+        # Load visual frames (matching OGM-GE's frame sampling)
+        visual_dir = os.path.join(self.visual_path, video_id)
+        file_num = len([f for f in os.listdir(visual_dir) if f.endswith(".jpg")])
+
+        if self.split == "train":
+            transform = transforms.Compose([
+                transforms.RandomResizedCrop(224),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+            ])
+        else:
+            transform = transforms.Compose([
+                transforms.Resize(size=(224, 224)),
+                transforms.ToTensor(),
+                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+            ])
+
+        pick_num = self.num_frames
+        seg = max(1, int(file_num / pick_num))
+
+        image_n = None
+        for i in range(pick_num):
+            t = seg * i + 1
+            frame_name = f"frame_{t:05d}.jpg"
+            frame_path = os.path.join(visual_dir, frame_name)
+
+            if os.path.exists(frame_path):
+                image = Image.open(frame_path).convert("RGB")
+            else:
+                # Fallback: use first available frame
+                frames = sorted(f for f in os.listdir(visual_dir) if f.endswith(".jpg"))
+                if frames:
+                    image = Image.open(os.path.join(visual_dir, frames[min(i, len(frames) - 1)])).convert("RGB")
+                else:
+                    # Return zero tensor if no frames
+                    return {
+                        "audio": spectrogram,
+                        "visual": torch.zeros(3, pick_num, 224, 224),
+                        "label": torch.tensor(label, dtype=torch.long),
+                    }
+
+            img_tensor = transform(image).unsqueeze(1).float()  # (3, 1, 224, 224)
+            if image_n is None:
+                image_n = copy.copy(img_tensor)
+            else:
+                image_n = torch.cat((image_n, img_tensor), 1)  # (3, T, 224, 224)
 
         return {
-            "audio": audio,
-            "visual": visual,
+            "audio": spectrogram,
+            "visual": image_n,
             "label": torch.tensor(label, dtype=torch.long),
         }
 
