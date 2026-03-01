@@ -52,6 +52,7 @@ from tqdm import tqdm
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.models import MultimodalModel, ProbeManager
+from src.models.fusion import ConcatFusion
 from src.datasets import CREMADDataset, AVEDataset, KineticsSoundsDataset, MOSEIDataset
 from src.losses import (
     ASGMLLoss,
@@ -622,6 +623,221 @@ def train_epoch_inforeg(
     return metrics
 
 
+def train_epoch_arl(
+    model: nn.Module,
+    dataloader: DataLoader,
+    optimizer: optim.Optimizer,
+    device: torch.device,
+    epoch: int,
+    config: dict,
+    logger,
+    writer: SummaryWriter = None,
+    temperature: float = 8.0,
+    gamma_arl: float = 4.0,
+    arl_start: int = 5,
+):
+    """
+    Train for one epoch in ARL mode (Wei et al., ICCV 2025).
+
+    Asymmetric Representation Learning modulates per-modality gradients
+    so that the optimization dependency ratio aligns with the inverse
+    of each modality's prediction variance.
+
+    Three components:
+    1. Modality Analysis — measure variance via self-information entropy
+    2. Asymmetric Learning — gradient modulation via GradScale (g + g * coeff)
+    3. Unimodal Bias Regularization — unimodal CE losses to reduce bias
+
+    Implementation follows the reference code at:
+    https://github.com/shicaiwei123/ICCV2025-ARL
+
+    Parameters
+    ----------
+    temperature : float
+        T in Eq. 18 — controls modulation intensity. Paper uses T=8 for CREMA-D.
+    gamma_arl : float
+        γ in Eq. 22 — weight for unimodal bias regularization losses.
+    arl_start : int
+        Epoch after which to start applying asymmetric gradient modulation.
+        Before this, use fixed coefficient 0.5 for warm-up (matching reference).
+    """
+    model.train()
+    criterion = nn.CrossEntropyLoss()
+
+    loss_meter = AverageMeter("Loss")
+    loss_fusion_meter = AverageMeter("FusionLoss")
+    metric_tracker = MetricTracker(config["evaluation"]["metrics"])
+    modalities = config["dataset"]["modalities"]
+    m_list = list(modalities)
+
+    # Track unimodal metrics
+    unimodal_trackers = {m: MetricTracker(['accuracy']) for m in modalities}
+
+    pbar = tqdm(dataloader, desc=f"Epoch {epoch}")
+
+    for batch_idx, batch in enumerate(pbar):
+        global_step = (epoch - 1) * len(dataloader) + batch_idx
+
+        inputs = {m: batch[m].to(device, non_blocking=True) for m in modalities}
+        targets = batch["label"].to(device, non_blocking=True)
+
+        optimizer.zero_grad()
+
+        # ===== Forward pass with ARL zero-out unimodal predictions =====
+        # ARL uses ConcatFusion_AUXI: a single shared Linear(1024→C) layer
+        # for both fused and unimodal predictions.  Unimodal predictions are
+        # obtained by zeroing out the other modality's features and passing
+        # through the SAME fusion layer.  This is structurally different from
+        # using separate unimodal classifiers.
+        # Reference: fusion_modules.py ConcatFusion_AUXI.forward()
+
+        # Encode each modality
+        features = {}
+        for m in modalities:
+            features[m] = model.encoders[m](inputs[m])
+
+        # Fused prediction (all modalities)
+        feature_list = [features[m] for m in m_list]
+        fused = model.fusion(feature_list)
+        logits = model.classifier(fused)  # Identity in ARL mode
+
+        # Zero-out unimodal predictions through shared fusion layer
+        unimodal_logits = {}
+        for i, m in enumerate(m_list):
+            zero_features = []
+            for j, m2 in enumerate(m_list):
+                if m2 == m:
+                    zero_features.append(features[m2])
+                else:
+                    zero_features.append(torch.zeros_like(features[m2]))
+            unimodal_logits[m] = model.classifier(model.fusion(zero_features))
+
+        # ===== Component 1: Modality Analysis (Eq. 17) =====
+        # Measure inverse variance q^m via self-information entropy
+        # Reference: main_arl_variance.py lines 119-132
+        entropy_raw = {}
+        for m in modalities:
+            probs_m = torch.softmax(unimodal_logits[m].detach(), dim=1)
+            # H = -Σ p(j) * log(p(j))  averaged over batch
+            entropy_raw[m] = -(probs_m * torch.log(probs_m + 1e-16)).sum(dim=1).mean().item()
+
+        # Normalize entropies and clamp (reference lines 127-129)
+        entropy_sum = sum(entropy_raw.values()) + 1e-8
+        entropy_norm = {m: entropy_raw[m] / entropy_sum for m in modalities}
+        entropy_clamped = {m: max(entropy_norm[m], 0.3) for m in modalities}
+
+        # Inverse entropy = variance proxy weight (reference lines 131-141)
+        inv_entropy = {m: 1.0 / entropy_clamped[m] for m in modalities}
+        inv_sum = sum(inv_entropy.values())
+        q_weights = {m: inv_entropy[m] / inv_sum for m in modalities}
+
+        # ===== Component 2: Dependency via mean absolute logits (Eq. 4) =====
+        # Reference: main_arl_variance.py lines 116-137
+        d_raw = {}
+        for m in modalities:
+            # Mean absolute logit magnitude (NOT softmax scores)
+            d_raw[m] = torch.mean(torch.abs(unimodal_logits[m].detach()), dim=0).sum().item()
+
+        # Normalize dependency
+        d_sum = sum(d_raw.values()) + 1e-8
+        d_norm = {m: d_raw[m] / d_sum for m in modalities}
+
+        # ===== Asymmetric Learning coefficients (Eq. 18) =====
+        # Reference: main_arl_variance.py lines 150-157
+        # weight = softmax([d_other * q_self * T, ...]) for each modality
+        arl_coeffs = {}
+
+        if epoch > arl_start and len(m_list) >= 2:
+            # Build softmax input: for modality i, score = d_other * q_self * T
+            # Reference for 2-modality: softmax([d_v * q_a * T, d_a * q_v * T])
+            raw_scores = []
+            for i, m in enumerate(m_list):
+                others = [om for om in m_list if om != m]
+                # d_other: average dependency of OTHER modalities
+                d_other = sum(d_norm[om] for om in others) / len(others)
+                # q_self: inverse variance weight of THIS modality
+                q_self = q_weights[m]
+                raw_scores.append(d_other * q_self * temperature)
+
+            # Softmax to get coefficients
+            raw_tensor = torch.tensor(raw_scores, dtype=torch.float32)
+            arl_soft = torch.softmax(raw_tensor, dim=0)
+            for i, m in enumerate(m_list):
+                arl_coeffs[m] = arl_soft[i].item()
+        else:
+            # Warm-up: fixed coefficient (reference line 163-164)
+            for m in m_list:
+                arl_coeffs[m] = 0.5
+
+        # ===== Component 3: Unimodal Bias Regularization (Eq. 21-22) =====
+        loss_fusion = criterion(logits, targets)
+        loss_unimodal = {}
+        for m in modalities:
+            loss_unimodal[m] = criterion(unimodal_logits[m], targets)
+
+        # Total loss — matching reference code behavior exactly:
+        # - Before arl_start: loss = loss_f + sum(unimodal) * 1.0  (gamma=1)
+        # - After arl_start:  loss = loss_f + sum(unimodal) * gamma (gamma=4)
+        # Reference lines 159-162: gamma only applied after start epoch
+        effective_gamma = gamma_arl if epoch > arl_start else 1.0
+        loss = loss_fusion + effective_gamma * sum(loss_unimodal.values())
+
+        # Backward pass
+        loss.backward()
+
+        # ===== Apply ARL GradScale modulation (Eq. 19-20) =====
+        # Reference backbone.py GradScale: grad = grad + grad * weight
+        # IMPORTANT: In the reference code, the computed asymmetric softmax
+        # weights are never assigned back to model.args.audio_weight/visual_weight
+        # (they stay at the initialized 0.5).  So GradScale is always
+        # grad * (1 + 0.5) = 1.5x for both modalities.  Only after arl_start.
+        if epoch > arl_start:
+            fixed_coeff = 0.5  # Matches reference code init value (never updated)
+            for m in modalities:
+                for name, param in model.named_parameters():
+                    if f"encoders.{m}" in name and param.grad is not None:
+                        param.grad.data = param.grad.data + param.grad.data * fixed_coeff
+
+        # Gradient clipping (reference line 171: max_norm=40)
+        nn.utils.clip_grad_norm_(model.parameters(), max_norm=40, norm_type=2)
+
+        optimizer.step()
+
+        # Update metrics
+        loss_meter.update(loss.item(), targets.size(0))
+        loss_fusion_meter.update(loss_fusion.item(), targets.size(0))
+        metric_tracker.update(logits, targets)
+
+        for m in modalities:
+            unimodal_trackers[m].update(unimodal_logits[m], targets)
+
+        pbar.set_postfix({"loss": f"{loss_meter.avg:.4f}"})
+
+        # Logging
+        if writer is not None and batch_idx % config["logging"]["log_interval"] == 0:
+            writer.add_scalar("train/loss", loss.item(), global_step)
+            writer.add_scalar("train/fusion_loss", loss_fusion.item(), global_step)
+            for m in modalities:
+                writer.add_scalar(f"train/unimodal_loss_{m}", loss_unimodal[m].item(), global_step)
+                writer.add_scalar(f"arl/entropy_{m}", entropy_raw[m], global_step)
+                writer.add_scalar(f"arl/q_weight_{m}", q_weights[m], global_step)
+                writer.add_scalar(f"arl/d_norm_{m}", d_norm[m], global_step)
+                writer.add_scalar(f"arl/coeff_{m}", arl_coeffs[m], global_step)
+            writer.add_scalar("arl/effective_gamma", effective_gamma, global_step)
+            writer.add_scalar("arl/gradscale_active", float(epoch > arl_start), global_step)
+
+    # Compute epoch metrics
+    metrics = metric_tracker.compute()
+    metrics["loss"] = loss_meter.avg
+    metrics["fusion_loss"] = loss_fusion_meter.avg
+
+    for m in modalities:
+        unimodal_metrics = unimodal_trackers[m].compute()
+        metrics[f"unimodal_acc_{m}"] = unimodal_metrics['accuracy']
+
+    return metrics
+
+
 def apply_ogm_ge(
     model: nn.Module,
     unimodal_logits: dict,
@@ -1159,7 +1375,7 @@ def main():
         "--mode",
         type=str,
         default="baseline",
-        choices=["baseline", "frequency", "staleness", "adaptive", "miles", "inforeg"],
+        choices=["baseline", "frequency", "staleness", "adaptive", "miles", "inforeg", "arl"],
         help="Training mode",
     )
     parser.add_argument("--fixed-ratio", type=int, default=2, help="Fixed frequency ratio (for frequency mode)")
@@ -1174,6 +1390,13 @@ def main():
                         help="InfoReg: β regulation strength (α = β * Δ_m)")
     parser.add_argument("--inforeg-K", type=float, default=0.04,
                         help="InfoReg: K threshold for PLW detection on relative Tr(F) change")
+    # ARL-specific arguments (Wei et al., ICCV 2025)
+    parser.add_argument("--arl-temperature", type=float, default=8.0,
+                        help="ARL: T temperature for asymmetric coefficient softmax (default: 8 for CREMA-D)")
+    parser.add_argument("--arl-gamma", type=float, default=4.0,
+                        help="ARL: γ weight for unimodal bias regularization losses (default: 4.0)")
+    parser.add_argument("--arl-start", type=int, default=5,
+                        help="ARL: epoch after which to start asymmetric modulation (default: 5)")
     # Dataset overrides
     parser.add_argument("--fps", type=int, default=None,
                         help="Override dataset fps (frames per second extraction rate)")
@@ -1243,7 +1466,7 @@ def main():
         config["dataset"]["num_frames"] = args.num_frames
 
     # Configure ASGML based on mode
-    if args.mode in ("baseline", "miles", "inforeg"):
+    if args.mode in ("baseline", "miles", "inforeg", "arl"):
         config["asgml"]["enabled"] = False
     else:
         config["asgml"]["enabled"] = True
@@ -1309,6 +1532,9 @@ def main():
         "miles_reduction": args.miles_reduction,
         "inforeg_beta": args.inforeg_beta,
         "inforeg_K": args.inforeg_K,
+        "arl_temperature": args.arl_temperature,
+        "arl_gamma": args.arl_gamma,
+        "arl_start": args.arl_start,
     }
     with open(output_dir / "config.yaml", "w") as f:
         yaml.dump(config_copy, f)
@@ -1386,6 +1612,18 @@ def main():
         feature_dim=config["model"]["feature_dim"],
         fusion_dim=config["model"]["fusion_dim"],
     ).to(device)
+
+    # For ARL mode: override fusion layer to match ARL's ConcatFusion_AUXI
+    # ARL uses a single Linear(1024 → num_classes) for fusion+classification,
+    # with zero-out unimodal predictions through the same layer.
+    # Our default has Linear(1024 → 512) + Linear(512 → 6) which is structurally different.
+    if args.mode == "arl":
+        num_classes = config["dataset"]["num_classes"]
+        feature_dims = [config["model"]["feature_dim"]] * len(modalities)
+        model.fusion = ConcatFusion(feature_dims, num_classes)
+        model.classifier = nn.Identity()
+        model = model.to(device)
+        logger.info("ARL: Replaced fusion with direct Linear(1024→num_classes), classifier=Identity")
 
     logger.info(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
 
@@ -1605,6 +1843,102 @@ def main():
         logger.info(f"Training complete. Best accuracy: {best_acc:.4f}")
         writer.close()
         return  # Exit early for InfoReg mode
+
+    # ========== ARL Mode: Separate Training Loop ==========
+    if args.mode == "arl":
+        logger.info(f"ARL mode: T={args.arl_temperature}, γ={args.arl_gamma}, start={args.arl_start}")
+
+        # ARL uses SGD with MultiStepLR, matching reference code
+        optimizer = torch.optim.SGD(
+            model.parameters(),
+            lr=config["training"]["lr"],
+            momentum=config["training"].get("momentum", 0.9),
+            weight_decay=config["training"].get("weight_decay", 1e-4),
+        )
+        lr_scheduler = get_scheduler(optimizer, config)
+
+        # Resume from checkpoint if specified
+        start_epoch = 1
+        best_acc = 0.0
+        if args.resume and Path(args.resume).exists():
+            logger.info(f"Resuming from checkpoint: {args.resume}")
+            checkpoint = torch.load(args.resume, map_location=device)
+            model.load_state_dict(checkpoint["model_state_dict"])
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            start_epoch = checkpoint["epoch"] + 1
+            best_acc = checkpoint.get("best_acc", 0.0)
+            if lr_scheduler is not None:
+                for _ in range(checkpoint["epoch"]):
+                    lr_scheduler.step()
+            logger.info(f"Resumed from epoch {checkpoint['epoch']}, best_acc={best_acc:.4f}")
+
+        # ARL Training Loop
+        for epoch in range(start_epoch, config["training"]["epochs"] + 1):
+            # Train
+            train_metrics = train_epoch_arl(
+                model, train_loader, optimizer, device, epoch, config, logger,
+                writer=writer,
+                temperature=args.arl_temperature,
+                gamma_arl=args.arl_gamma,
+                arl_start=args.arl_start,
+            )
+
+            # Step LR scheduler
+            if lr_scheduler is not None:
+                lr_scheduler.step()
+
+            # Evaluate
+            test_metrics = evaluate_miles(model, test_loader, device, config)
+
+            # Log
+            log_str = (
+                f"Epoch {epoch}: "
+                f"Train Loss={train_metrics['loss']:.4f}, "
+                f"Train Acc={train_metrics['accuracy']:.4f}, "
+                f"Test Acc={test_metrics['accuracy']:.4f}, "
+                f"Test F1={test_metrics['f1_macro']:.4f}"
+            )
+            if "utilization_gap" in test_metrics:
+                log_str += f", Util Gap={test_metrics['utilization_gap']:.4f}"
+            logger.info(log_str)
+
+            # Tensorboard logging
+            writer.add_scalar("test/accuracy", test_metrics["accuracy"], epoch)
+            writer.add_scalar("test/f1_macro", test_metrics["f1_macro"], epoch)
+            writer.add_scalar("test/loss", test_metrics["loss"], epoch)
+            if "utilization_gap" in test_metrics:
+                writer.add_scalar("test/utilization_gap", test_metrics["utilization_gap"], epoch)
+            for m in modalities:
+                writer.add_scalar(f"test/unimodal_acc_{m}", test_metrics.get(f"unimodal_acc_{m}", 0), epoch)
+
+            # Save checkpoint
+            if test_metrics["accuracy"] > best_acc:
+                best_acc = test_metrics["accuracy"]
+                best_checkpoint = {
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "best_acc": best_acc,
+                    "config": config_copy,
+                }
+                torch.save(best_checkpoint, output_dir / "best_model.pt")
+                logger.info(f"New best model saved with accuracy: {best_acc:.4f}")
+
+            # Periodic checkpoint
+            if epoch % config["logging"]["save_interval"] == 0:
+                checkpoint_data = {
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "best_acc": best_acc,
+                    "config": config_copy,
+                }
+                torch.save(checkpoint_data, output_dir / f"checkpoint_epoch{epoch}.pt")
+
+        # Final summary
+        logger.info(f"Training complete. Best accuracy: {best_acc:.4f}")
+        writer.close()
+        return  # Exit early for ARL mode
 
     # ========== Standard ASGML Modes ==========
     # Create optimizer and scheduler
