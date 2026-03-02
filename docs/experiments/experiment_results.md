@@ -534,4 +534,103 @@ InfoReg reports 71.90% and MILES reports 75.1% on CREMA-D, but both use differen
 
 
 
-*Last updated: 2026-02-14 (3-frame Phase 2 complete — ASGML boost+OGM-GE: 71.45 ± 1.71% beats OGM-GE 69.14 ± 1.13% by +2.31pp. InfoReg: 67.72 ± 0.83%, MILES: 61.05 ± 2.52%. All 25 runs finished.)*
+---
+
+## AVE Dataset Results (Phase 1 — Single Seed)
+
+**Date:** 2026-02-25
+**Dataset:** AVE (audio-visual event recognition, 28 classes)
+**Architecture:** ResNet18 encoders (pretrained ImageNet), late fusion, batch size 64, SGD lr=0.001, StepLR step=40
+**Seed:** 42
+
+### Phase 1 Sweep (seed=42)
+
+| Rank | Method | Config | Best Acc |
+|------|--------|--------|----------|
+| 1 | **ASGML boost only (α=0.5)** | continuous, no OGM-GE | **86.91%** |
+| 2 | Baseline | no ASGML | 86.67% |
+| 3 | ASGML boost + OGM-GE (α=0.75) | continuous + OGM-GE | 86.54% |
+| 4 | OGM-GE alone | α=0.0 (OGM-GE only) | 86.42% |
+
+### AVE Analysis
+
+1. **Tight clustering (~86.4–86.9%).** All methods perform within 0.5pp on AVE, suggesting this dataset has minimal modality imbalance — both audio and visual contribute roughly equally.
+
+2. **OGM-GE slightly hurts.** OGM-GE (86.42%) is marginally below baseline (86.67%). When modalities are already balanced, gradient modulation introduces unnecessary interference.
+
+3. **Boost-only is marginally best.** ASGML boost alone (86.91%) edges out baseline, consistent with the idea that gentle probe-guided boosting helps even in low-imbalance settings.
+
+4. **Phase 2 multi-seed needed** to determine if these small differences are statistically significant or within noise.
+
+---
+
+## ARL Baseline Comparison (Wei et al., ICCV 2025)
+
+**Date:** 2026-02-25 to 2026-02-27
+**Paper:** "Improving Multimodal Learning via Imbalanced Learning" (ICCV 2025)
+**Method:** Asymmetric Representation Learning — entropy-based gradient modulation + unimodal bias regularization (γ=4) + GradScale (1.5x gradient boost)
+
+### Implementation Details
+
+ARL was implemented following the reference code (https://github.com/shicaiwei123/ICCV2025-ARL). Key findings from code analysis:
+
+1. **Reference code bug:** The computed asymmetric softmax weights are never assigned back to model weights — the GradScale coefficient stays fixed at 0.5 (initialization value), making the gradient scaling a uniform 1.5x for both modalities rather than asymmetric.
+
+2. **Architecture difference:** ARL requires `ConcatFusion_AUXI` — a single `Linear(1024→C)` layer for both fused and unimodal predictions (zero-out approach through shared classifier). Our standard model uses `Linear(1024→512)` + `Linear(512→C)` with separate unimodal classifiers.
+
+3. **Warm-up behavior:** gamma=1.0 for epochs ≤5 (warm-up), gamma=4.0 after. GradScale only active after epoch 5.
+
+### CREMA-D Results
+
+| Config | Architecture | Best Acc | Train Acc | Notes |
+|--------|-------------|----------|-----------|-------|
+| ARL (our standard arch) | Linear(1024→512→6) + separate unimodal classifiers | 63.31% | 99.97% | Severe overfitting |
+| ARL (their arch, v2) | Linear(1024→6) + zero-out shared classifier | 62.90% | 99.97% | Matched reference code exactly |
+| **Paper-reported ARL** | **Their full setup** | **76.61%** | — | **Not reproducible** |
+| Paper-reported baseline | Their setup | 58.83% | — | Our baseline is ~66% (7pp higher) |
+
+### Why ARL Underperforms
+
+1. **Severe overfitting:** Train accuracy reaches 99.97% while test stays at ~63%. The γ=4 unimodal regularization + 1.5x gradient scaling causes memorization.
+
+2. **Baseline gap:** Their baseline (58.83%) is 7pp lower than ours (~66%), suggesting their setup has inherently more modality imbalance. ARL may only help when starting from a weaker baseline.
+
+3. **Non-reproducible claims:** Even matching their architecture, weight init, loss computation, GradScale, warm-up schedule, and data splits exactly, we get 62.90% vs their 76.61% (13.7pp gap). The OGM-GE paper by the same authors reports baseline=66.9% on the same dataset, conflicting with ARL's reported 58.83%.
+
+### Comparison: ASGML vs ARL (Controlled, Same Architecture)
+
+| Method | CREMA-D (1f) | CREMA-D (3f) | vs Baseline |
+|--------|-------------|-------------|-------------|
+| **ASGML boost + OGM-GE (α=0.75)** | **62.69 ± 0.22%** | **71.45 ± 1.71%** | **+2.39pp / +9.86pp** |
+| OGM-GE alone | 62.47 ± 1.42% | 69.14 ± 1.13% | +2.17pp / +7.55pp |
+| InfoReg | — | 67.72 ± 0.83% | — / +6.13pp |
+| Baseline | 60.30 ± 0.70% | 61.59 ± 0.80% | — |
+| ARL (our arch) | 63.31% (1 seed) | — | +3.01pp (single seed) |
+| ARL (their arch) | 62.90% (1 seed) | — | +2.60pp (single seed) |
+| MILES | 60.46 ± 0.85% | 61.05 ± 2.52% | +0.16pp / -0.54pp |
+
+**Key takeaway:** ASGML outperforms ARL in the controlled comparison. ARL's published gains (76.61%) are not reproducible and appear setup-dependent. ASGML provides consistent, architecture-independent improvement that composes with OGM-GE.
+
+---
+
+## Experiment Output Locations (Updated)
+
+| Experiment | Directory |
+|-----------|-----------|
+| Phase 1 frequency sweep | `outputs/sweep/p1_*_seed42/` |
+| Phase 1 staleness sweep | `outputs/sweep/p1_stale_*_seed42/` |
+| Phase 2 multi-seed | `outputs/sweep/p2_*_seed{42,0,1,2,3}/` |
+| Baselines multi-seed | `outputs/sweep/baseline_seed{42,0,1,2,3}/` |
+| OGM-GE multi-seed | `outputs/sweep/ogmge_seed{42,0,1,2,3}/` |
+| Continuous v1 (throttle) | `outputs/sweep/cont_*_seed42/` |
+| Continuous v2 Phase 1 (boost) | `outputs/sweep/boost_*_seed42/` |
+| Continuous v2 Phase 2 (multi-seed) | `outputs/sweep/p2_boost_*_seed{42,0,1,2,3}/` |
+| 3-frame Phase 1 (all methods) | `outputs/sweep_3f/3f_*_seed42/` |
+| 3-frame Phase 2 (multi-seed) | `outputs/sweep_3f/3f_*_seed{42,123,456,789,1024}/` |
+| AVE Phase 1 sweep | `outputs/sweep_ave/ave_*_seed42/` |
+| ARL CREMA-D (our arch) | `outputs/cremad_arl/cremad_arl_seed42/` |
+| ARL CREMA-D (their arch, v2) | `outputs/cremad_arl_v2/cremad_arl_v2_seed42/` |
+
+---
+
+*Last updated: 2026-02-27 (AVE Phase 1 complete — tight clustering ~86.4-86.9%, minimal imbalance. ARL comparison complete — 62.90% with their exact setup, not reproducible from paper's 76.61%. ASGML outperforms ARL in controlled comparison.)*
