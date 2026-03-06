@@ -853,7 +853,14 @@ def apply_ogm_ge(
 
     Modulates encoder gradients based on per-modality softmax score ratios.
     The dominant modality's gradients are scaled down and injected with
-    Gaussian noise. Only applies to Conv2d layers (4D gradients).
+    Gaussian noise.
+
+    Supports N>=2 modalities: each modality's score is compared to the mean
+    score across all modalities.  Modalities scoring above the mean are
+    considered dominant and their gradients are scaled down.
+
+    Applies to both Conv2d (4D) and Linear (2D) weight gradients, enabling
+    use with MLP encoders (e.g., for pre-extracted features in MOSEI).
 
     Parameters
     ----------
@@ -891,17 +898,27 @@ def apply_ogm_ge(
         scores[m] = sum(probs[i][targets[i]] for i in range(len(targets)))
 
     # Compute ratios and coefficients (Eq. 10 in OGM-GE paper)
+    # Generalized for N modalities: compare each modality's score to the mean.
+    # Dominant modalities (score > mean) get scaled down; others stay at 1.0.
     m_list = list(modalities)
     coeffs = {m: 1.0 for m in modalities}
 
     if len(m_list) == 2:
+        # Original 2-modality formulation (exact OGM-GE paper)
         ratio = scores[m_list[0]] / (scores[m_list[1]] + 1e-8)
         if ratio > 1:
             coeffs[m_list[0]] = 1 - tanh(alpha * relu(ratio))
         else:
             coeffs[m_list[1]] = 1 - tanh(alpha * relu(1.0 / (ratio + 1e-8)))
+    elif len(m_list) > 2:
+        # N-modality generalization: ratio = score_m / mean(scores)
+        mean_score = sum(scores[m] for m in m_list) / len(m_list)
+        for m in m_list:
+            ratio = scores[m] / (mean_score + 1e-8)
+            if ratio > 1:
+                coeffs[m] = 1 - tanh(alpha * relu(ratio))
 
-    # Apply modulation to encoder conv layers only
+    # Apply modulation to encoder layers (Conv2d and Linear weights)
     if modulation_start <= epoch <= modulation_end:
         for m in modalities:
             coeff = coeffs[m]
@@ -911,7 +928,8 @@ def apply_ogm_ge(
                 continue  # coeff is 1.0, no modulation needed
             for name, param in model.named_parameters():
                 if f"encoders.{m}" in name and param.grad is not None:
-                    if len(param.grad.size()) == 4:  # Conv2d only
+                    # Apply to Conv2d (4D) and Linear weight (2D) gradients
+                    if len(param.grad.size()) >= 2:
                         param.grad = param.grad * coeff_val + \
                             torch.zeros_like(param.grad).normal_(
                                 0, param.grad.std().item() + 1e-8
