@@ -838,6 +838,315 @@ def train_epoch_arl(
     return metrics
 
 
+def compute_opm_drop_probabilities(
+    model: nn.Module,
+    features: dict,
+    targets: torch.Tensor,
+    modalities: list,
+    q_base: float = 0.5,
+    lam: float = 0.5,
+) -> torch.Tensor:
+    """
+    Compute per-modality drop probabilities for OPM (Wei et al., TPAMI 2024).
+
+    Decomposes the shared fusion classifier weights to estimate per-modality
+    discriminative scores, then computes adaptive drop probabilities based on
+    the discrepancy ratio between modalities.
+
+    Parameters
+    ----------
+    model : nn.Module
+        Model with fusion.fc as Linear(sum_dims, num_classes).
+    features : dict
+        Per-modality feature tensors {modality: (B, D)}.
+    targets : torch.Tensor
+        Ground truth labels (B,).
+    modalities : list
+        List of modality names.
+    q_base : float
+        Base drop probability (Eq. 8 in paper).
+    lam : float
+        Lambda controlling adjustment degree (Eq. 8 in paper).
+
+    Returns
+    -------
+    torch.Tensor
+        Drop probability per modality, shape (M,).
+    """
+    softmax = nn.Softmax(dim=1)
+    relu = nn.ReLU(inplace=True)
+
+    # Decompose shared classifier weights per modality
+    w = model.fusion.fc.weight.clone().detach()  # (C, D_total)
+    b = model.fusion.fc.bias.clone().detach()    # (C,)
+    M = len(modalities)
+    feature_dim = model.feature_dim
+
+    # Compute unimodal discriminative scores (Eq. 6 in paper)
+    performances = {}
+    offset = 0
+    for m in modalities:
+        w_m = w[:, offset:offset + feature_dim]  # (C, D_m)
+        # Unimodal prediction: W_m · φ_m + b/M
+        t_m = torch.mm(features[m].detach(), w_m.t()) + b / M  # (B, C)
+        # Sum of softmax probabilities for correct class across batch (Eq. 6)
+        probs_m = softmax(t_m)
+        performances[m] = sum(probs_m[i][targets[i]] for i in range(len(targets)))
+        offset += feature_dim
+
+    # Compute discrepancy ratios and drop probabilities (Eq. 7-8)
+    m_list = list(modalities)
+    q = torch.zeros(M)
+
+    for i, m in enumerate(m_list):
+        others = [om for om in m_list if om != m]
+        # ρ_m = (1/(M-1)) * Σ_{j≠m} s_m / s_j  (Eq. 7)
+        rho = sum(performances[m] / (performances[om] + 1e-8) for om in others) / len(others)
+
+        if rho > 1:
+            # q_m = q_base * (1 + λ * tanh(ρ - 1))  (Eq. 8)
+            q[i] = q_base * (1 + lam * torch.tanh(relu(rho - 1)))
+        else:
+            q[i] = 0.0
+
+    q = torch.clamp(q, 0.0, 1.0)
+    return q, performances
+
+
+def apply_opm_feature_drop(
+    features: dict,
+    modalities: list,
+    q: torch.Tensor,
+    p_exe: float = 0.7,
+    device: torch.device = None,
+) -> tuple:
+    """
+    Apply OPM feature dropout (Wei et al., TPAMI 2024).
+
+    Drops dominant modality features with adaptive probability and rescales
+    remaining features to maintain expected activation magnitude.
+
+    Parameters
+    ----------
+    features : dict
+        Per-modality feature tensors {modality: (B, D)}.
+    modalities : list
+        Ordered list of modality names.
+    q : torch.Tensor
+        Per-modality drop probabilities, shape (M,).
+    p_exe : float
+        Probability of executing the drop at all (not always applied).
+    device : torch.device
+        Device for tensors.
+
+    Returns
+    -------
+    tuple
+        (dropped_features, update_flag) where dropped_features is dict of
+        (B, D) tensors and update_flag is (B,) bool tensor indicating
+        which samples have at least one modality remaining.
+    """
+    m_list = list(modalities)
+    M = len(m_list)
+    B = features[m_list[0]].shape[0]
+    D = features[m_list[0]].shape[1]
+
+    # Decide whether to execute drop this step
+    if np.random.rand() > p_exe:
+        return features, torch.ones(B, dtype=torch.bool, device=device)
+
+    # Compute rescaling factor: θ = Σ(D_m * q_m) / Σ(D_m)
+    # Since all dims are equal: θ = mean(q)
+    theta = q.mean().item()
+
+    # Create Bernoulli masks: sample per (modality, batch) with prob (1-q)
+    # mask shape: (M, B, 1) — broadcast over feature dim
+    masks = []
+    for i in range(M):
+        mask = torch.bernoulli(
+            torch.ones(B, 1, device=device) * (1 - q[i].item())
+        )
+        masks.append(mask)
+
+    # Apply masks and rescale by 1/(1-θ) (inverted dropout)
+    dropped_features = {}
+    for i, m in enumerate(m_list):
+        dropped_features[m] = features[m] * masks[i]
+        if theta < 1.0:
+            dropped_features[m] = dropped_features[m] / (1 - theta + 1e-8)
+
+    # Flag samples where at least one modality survives
+    mask_stack = torch.cat(masks, dim=1)  # (B, M)
+    update_flag = mask_stack.sum(dim=1) > 0  # (B,)
+
+    return dropped_features, update_flag
+
+
+def train_epoch_opm(
+    model: nn.Module,
+    dataloader: DataLoader,
+    optimizer: optim.Optimizer,
+    device: torch.device,
+    epoch: int,
+    config: dict,
+    logger,
+    writer: SummaryWriter = None,
+    q_base: float = 0.5,
+    lam: float = 0.5,
+    p_exe: float = 0.7,
+    warmup_epochs: int = 5,
+    ogm_ge_config: dict = None,
+):
+    """
+    Train for one epoch in OPM mode (Wei et al., TPAMI 2024).
+
+    On-the-fly Prediction Modulation drops dominant modality features
+    during the feed-forward stage with adaptive probability based on
+    discriminative discrepancy. Optionally combined with OGM-GE for
+    gradient modulation in the back-propagation stage (OPM+OGM).
+
+    Parameters
+    ----------
+    q_base : float
+        Base drop probability (paper default: 0.5).
+    lam : float
+        Lambda controlling adjustment degree (paper default: 0.5).
+    p_exe : float
+        Probability of executing the drop in each step (paper default: 0.7).
+    warmup_epochs : int
+        Number of warm-up epochs before OPM is applied (paper default: 5).
+    ogm_ge_config : dict or None
+        If not None, also apply OGM-GE gradient modulation (OPM+OGM combined).
+    """
+    model.train()
+    criterion = nn.CrossEntropyLoss()
+
+    loss_meter = AverageMeter("Loss")
+    loss_fusion_meter = AverageMeter("FusionLoss")
+    metric_tracker = MetricTracker(config["evaluation"]["metrics"])
+    modalities = config["dataset"]["modalities"]
+    m_list = list(modalities)
+
+    # Track unimodal metrics
+    unimodal_trackers = {m: MetricTracker(['accuracy']) for m in modalities}
+
+    warm_up = epoch <= warmup_epochs
+
+    pbar = tqdm(dataloader, desc=f"Epoch {epoch}")
+
+    for batch_idx, batch in enumerate(pbar):
+        global_step = (epoch - 1) * len(dataloader) + batch_idx
+
+        inputs = {m: batch[m].to(device, non_blocking=True) for m in modalities}
+        targets = batch["label"].to(device, non_blocking=True)
+
+        optimizer.zero_grad()
+
+        # ===== Encode each modality =====
+        features = {}
+        for m in modalities:
+            features[m] = model.encoders[m](inputs[m])
+
+        # ===== Compute unimodal scores (for OPM and OGM) =====
+        # Decompose shared classifier to get per-modality predictions
+        w = model.fusion.fc.weight.clone().detach()
+        b = model.fusion.fc.bias.clone().detach()
+        M = len(m_list)
+        unimodal_logits = {}
+        offset = 0
+        for m in m_list:
+            w_m = w[:, offset:offset + model.feature_dim]
+            unimodal_logits[m] = torch.mm(features[m].detach(), w_m.t()) + b / M
+            offset += model.feature_dim
+
+        # ===== Apply OPM feature dropout (feed-forward stage) =====
+        if not warm_up:
+            q, performances = compute_opm_drop_probabilities(
+                model, features, targets, modalities,
+                q_base=q_base, lam=lam,
+            )
+            dropped_features, update_flag = apply_opm_feature_drop(
+                features, modalities, q, p_exe=p_exe, device=device,
+            )
+        else:
+            dropped_features = features
+            update_flag = torch.ones(targets.size(0), dtype=torch.bool, device=device)
+            q = torch.zeros(len(m_list))
+
+        # ===== Forward through fusion with (potentially dropped) features =====
+        # Filter out samples where all modalities were dropped
+        if not warm_up and not update_flag.all():
+            # Only compute loss on samples with at least one modality
+            select_mask = update_flag
+            filtered_features = [dropped_features[m][select_mask] for m in m_list]
+            filtered_targets = targets[select_mask]
+
+            if len(filtered_targets) == 0:
+                continue
+
+            fused = model.fusion(filtered_features)
+            logits = model.classifier(fused)
+            loss = criterion(logits, filtered_targets)
+        else:
+            feature_list = [dropped_features[m] for m in m_list]
+            fused = model.fusion(feature_list)
+            logits = model.classifier(fused)
+            loss = criterion(logits, targets)
+            filtered_targets = targets
+
+        # ===== Backward pass =====
+        loss.backward()
+
+        # ===== Apply OGM-GE gradient modulation (back-propagation stage) =====
+        # OGM-GE is independent of OPM warm-up — always active when enabled
+        if ogm_ge_config is not None and ogm_ge_config["enabled"]:
+            ogm_coeffs, ogm_scores = apply_ogm_ge(
+                model, unimodal_logits, targets, modalities,
+                alpha=ogm_ge_config["alpha"],
+                epoch=epoch,
+                modulation_start=ogm_ge_config["modulation_start"],
+                modulation_end=ogm_ge_config["modulation_end"],
+            )
+            if writer and batch_idx % config["logging"]["log_interval"] == 0:
+                for m in modalities:
+                    c = ogm_coeffs[m]
+                    writer.add_scalar(
+                        f"ogm_ge/coeff_{m}",
+                        c.item() if isinstance(c, torch.Tensor) else c,
+                        global_step,
+                    )
+
+        optimizer.step()
+
+        # ===== Update metrics =====
+        loss_meter.update(loss.item(), filtered_targets.size(0))
+        loss_fusion_meter.update(loss.item(), filtered_targets.size(0))
+        metric_tracker.update(logits, filtered_targets)
+
+        for m in modalities:
+            unimodal_trackers[m].update(unimodal_logits[m], targets)
+
+        pbar.set_postfix({"loss": f"{loss_meter.avg:.4f}"})
+
+        # ===== Logging =====
+        if writer is not None and batch_idx % config["logging"]["log_interval"] == 0:
+            writer.add_scalar("train/loss", loss.item(), global_step)
+            for i, m in enumerate(m_list):
+                writer.add_scalar(f"opm/q_{m}", q[i].item(), global_step)
+            writer.add_scalar("opm/warm_up", float(warm_up), global_step)
+
+    # Compute epoch metrics
+    metrics = metric_tracker.compute()
+    metrics["loss"] = loss_meter.avg
+    metrics["fusion_loss"] = loss_fusion_meter.avg
+
+    for m in modalities:
+        unimodal_metrics = unimodal_trackers[m].compute()
+        metrics[f"unimodal_acc_{m}"] = unimodal_metrics['accuracy']
+
+    return metrics
+
+
 def apply_ogm_ge(
     model: nn.Module,
     unimodal_logits: dict,
@@ -1393,7 +1702,7 @@ def main():
         "--mode",
         type=str,
         default="baseline",
-        choices=["baseline", "frequency", "staleness", "adaptive", "miles", "inforeg", "arl"],
+        choices=["baseline", "frequency", "staleness", "adaptive", "miles", "inforeg", "arl", "opm"],
         help="Training mode",
     )
     parser.add_argument("--fixed-ratio", type=int, default=2, help="Fixed frequency ratio (for frequency mode)")
@@ -1408,6 +1717,15 @@ def main():
                         help="InfoReg: β regulation strength (α = β * Δ_m)")
     parser.add_argument("--inforeg-K", type=float, default=0.04,
                         help="InfoReg: K threshold for PLW detection on relative Tr(F) change")
+    # OPM-specific arguments (Wei et al., TPAMI 2024)
+    parser.add_argument("--opm-q-base", type=float, default=0.5,
+                        help="OPM: base drop probability q_base (default: 0.5)")
+    parser.add_argument("--opm-lam", type=float, default=0.5,
+                        help="OPM: lambda controlling adjustment degree (default: 0.5)")
+    parser.add_argument("--opm-p-exe", type=float, default=0.7,
+                        help="OPM: probability of executing drop per step (default: 0.7)")
+    parser.add_argument("--opm-warmup", type=int, default=5,
+                        help="OPM: warm-up epochs before OPM activates (default: 5)")
     # ARL-specific arguments (Wei et al., ICCV 2025)
     parser.add_argument("--arl-temperature", type=float, default=8.0,
                         help="ARL: T temperature for asymmetric coefficient softmax (default: 8 for CREMA-D)")
@@ -1471,6 +1789,8 @@ def main():
                         help="Override continuous mode Gaussian noise sigma")
     parser.add_argument("--exp-name", type=str, default=None,
                         help="Override experiment name (default: auto-generated)")
+    parser.add_argument("--single-layer-fusion", action="store_true",
+                        help="Use single Linear(concat_dim→num_classes) fusion (OPM-style arch)")
     args = parser.parse_args()
 
     # Load config
@@ -1484,7 +1804,7 @@ def main():
         config["dataset"]["num_frames"] = args.num_frames
 
     # Configure ASGML based on mode
-    if args.mode in ("baseline", "miles", "inforeg", "arl"):
+    if args.mode in ("baseline", "miles", "inforeg", "arl", "opm"):
         config["asgml"]["enabled"] = False
     else:
         config["asgml"]["enabled"] = True
@@ -1553,6 +1873,10 @@ def main():
         "arl_temperature": args.arl_temperature,
         "arl_gamma": args.arl_gamma,
         "arl_start": args.arl_start,
+        "opm_q_base": args.opm_q_base,
+        "opm_lam": args.opm_lam,
+        "opm_p_exe": args.opm_p_exe,
+        "opm_warmup": args.opm_warmup,
     }
     with open(output_dir / "config.yaml", "w") as f:
         yaml.dump(config_copy, f)
@@ -1631,17 +1955,17 @@ def main():
         fusion_dim=config["model"]["fusion_dim"],
     ).to(device)
 
-    # For ARL mode: override fusion layer to match ARL's ConcatFusion_AUXI
-    # ARL uses a single Linear(1024 → num_classes) for fusion+classification,
-    # with zero-out unimodal predictions through the same layer.
-    # Our default has Linear(1024 → 512) + Linear(512 → 6) which is structurally different.
-    if args.mode == "arl":
+    # For ARL/OPM modes or --single-layer-fusion: override fusion layer to single
+    # Linear(concat_dim → num_classes). ARL/OPM need to decompose classifier weights
+    # per modality. --single-layer-fusion allows any mode to use this architecture
+    # for fair cross-method comparison.
+    if args.mode in ("arl", "opm") or args.single_layer_fusion:
         num_classes = config["dataset"]["num_classes"]
         feature_dims = [config["model"]["feature_dim"]] * len(modalities)
         model.fusion = ConcatFusion(feature_dims, num_classes)
         model.classifier = nn.Identity()
         model = model.to(device)
-        logger.info("ARL: Replaced fusion with direct Linear(1024→num_classes), classifier=Identity")
+        logger.info(f"{args.mode.upper()}: Replaced fusion with direct Linear(concat_dim→num_classes), classifier=Identity")
 
     logger.info(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
 
@@ -1957,6 +2281,119 @@ def main():
         logger.info(f"Training complete. Best accuracy: {best_acc:.4f}")
         writer.close()
         return  # Exit early for ARL mode
+
+    # ========== OPM Mode: Separate Training Loop ==========
+    if args.mode == "opm":
+        logger.info(
+            f"OPM mode: q_base={args.opm_q_base}, λ={args.opm_lam}, "
+            f"p_exe={args.opm_p_exe}, warmup={args.opm_warmup}"
+        )
+        if args.ogm_ge:
+            logger.info(f"OPM+OGM combined: alpha={args.alpha}")
+
+        # OPM uses SGD (matching reference code for CREMA-D)
+        optimizer = torch.optim.SGD(
+            model.parameters(),
+            lr=config["training"]["lr"],
+            momentum=config["training"].get("momentum", 0.9),
+            weight_decay=config["training"].get("weight_decay", 1e-4),
+        )
+        lr_scheduler = get_scheduler(optimizer, config)
+
+        # OGM-GE config if combined
+        ogm_ge_config = None
+        if args.ogm_ge:
+            ogm_ge_config = {
+                "enabled": True,
+                "alpha": args.alpha,
+                "modulation_start": args.modulation_start,
+                "modulation_end": args.modulation_end,
+            }
+
+        # Resume from checkpoint if specified
+        start_epoch = 1
+        best_acc = 0.0
+        if args.resume and Path(args.resume).exists():
+            logger.info(f"Resuming from checkpoint: {args.resume}")
+            checkpoint = torch.load(args.resume, map_location=device)
+            model.load_state_dict(checkpoint["model_state_dict"])
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            start_epoch = checkpoint["epoch"] + 1
+            best_acc = checkpoint.get("best_acc", 0.0)
+            if lr_scheduler is not None:
+                for _ in range(checkpoint["epoch"]):
+                    lr_scheduler.step()
+            logger.info(f"Resumed from epoch {checkpoint['epoch']}, best_acc={best_acc:.4f}")
+
+        # OPM Training Loop
+        for epoch in range(start_epoch, config["training"]["epochs"] + 1):
+            # Train
+            train_metrics = train_epoch_opm(
+                model, train_loader, optimizer, device, epoch, config, logger,
+                writer=writer,
+                q_base=args.opm_q_base,
+                lam=args.opm_lam,
+                p_exe=args.opm_p_exe,
+                warmup_epochs=args.opm_warmup,
+                ogm_ge_config=ogm_ge_config,
+            )
+
+            # Step LR scheduler
+            if lr_scheduler is not None:
+                lr_scheduler.step()
+
+            # Evaluate
+            test_metrics = evaluate_miles(model, test_loader, device, config)
+
+            # Log
+            log_str = (
+                f"Epoch {epoch}: "
+                f"Train Loss={train_metrics['loss']:.4f}, "
+                f"Train Acc={train_metrics['accuracy']:.4f}, "
+                f"Test Acc={test_metrics['accuracy']:.4f}, "
+                f"Test F1={test_metrics['f1_macro']:.4f}"
+            )
+            if "utilization_gap" in test_metrics:
+                log_str += f", Util Gap={test_metrics['utilization_gap']:.4f}"
+            logger.info(log_str)
+
+            # Tensorboard logging
+            writer.add_scalar("test/accuracy", test_metrics["accuracy"], epoch)
+            writer.add_scalar("test/f1_macro", test_metrics["f1_macro"], epoch)
+            writer.add_scalar("test/loss", test_metrics["loss"], epoch)
+            if "utilization_gap" in test_metrics:
+                writer.add_scalar("test/utilization_gap", test_metrics["utilization_gap"], epoch)
+            for m in modalities:
+                writer.add_scalar(f"test/unimodal_acc_{m}", test_metrics.get(f"unimodal_acc_{m}", 0), epoch)
+
+            # Save checkpoint
+            if test_metrics["accuracy"] > best_acc:
+                best_acc = test_metrics["accuracy"]
+                best_checkpoint = {
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "best_acc": best_acc,
+                    "config": config_copy,
+                }
+                torch.save(best_checkpoint, output_dir / "best_model.pt")
+                logger.info(f"New best model saved with accuracy: {best_acc:.4f}")
+
+            # Periodic checkpoint
+            if epoch % config["logging"]["save_interval"] == 0:
+                checkpoint_data = {
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "best_acc": best_acc,
+                    "config": config_copy,
+                }
+                torch.save(checkpoint_data, output_dir / f"checkpoint_epoch{epoch}.pt")
+
+        # Final summary
+        logger.info(f"Training complete. Best accuracy: {best_acc:.4f}")
+        writer.close()
+        return  # Exit early for OPM mode
 
     # ========== Standard ASGML Modes ==========
     # Create optimizer and scheduler
