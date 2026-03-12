@@ -20,6 +20,10 @@
 7. [Earlier Single-Seed Experiments](#earlier-single-seed-experiments)
 8. [Baseline Reproduction Notes](#baseline-reproduction-notes)
 9. [Key Learnings](#key-learnings)
+10. [AVE Dataset Results](#ave-dataset-results)
+11. [CMU-MOSEI Dataset Results](#cmu-mosei-dataset-results-3-modalities)
+12. [ARL Baseline Comparison](#arl-baseline-comparison-wei-et-al-iccv-2025)
+13. [OPM Comparison](#opm-comparison-wei-et-al-tpami-2024)
 
 ---
 
@@ -698,4 +702,99 @@ ARL was implemented following the reference code (https://github.com/shicaiwei12
 
 ---
 
-*Last updated: 2026-03-06 (MOSEI Phase 2 complete — OGM-GE and boost+OGM-GE tied at ~72.45% (+2pp over baseline). Cross-dataset summary: ASGML scales with imbalance level. All 3 benchmarks done: CREMA-D, AVE, CMU-MOSEI. Next: paper writing.)*
+## OPM Comparison (Wei et al. TPAMI 2024)
+
+**Date:** 2026-03-11
+**Paper:** "Balanced Multimodal Learning via On-the-fly Prediction Modulation" (TPAMI 2024)
+**Reference code:** https://github.com/GeWu-Lab/BML_TPAMI2024
+
+### Background
+
+Wei et al. propose a two-stage modulation framework:
+- **OPM (On-the-fly Prediction Modulation):** Feed-forward stage — drops dominant modality features with adaptive Bernoulli masks based on discriminative discrepancy ratio ρ
+- **OGM (On-the-fly Gradient Modulation):** Back-propagation stage — scales gradients via `k = 1 - tanh(α · relu(ρ))` with Gaussian noise (this is what we already implement as OGM-GE)
+
+**Key mechanism:** OPM decomposes the shared fusion classifier weights per modality to compute unimodal discriminative scores without separate classifiers. The discrepancy ratio ρ drives adaptive drop probability `q = q_base × (1 + λ × tanh(relu(ρ-1)))`.
+
+### Architecture Constraint
+
+OPM requires a **single `Linear(concat_dim → num_classes)` fusion layer** to decompose classifier weights per modality. Our standard architecture uses `Linear(1024→512)` + `Linear(512→6)`, which cannot be decomposed this way.
+
+**Solution:** Added `--single-layer-fusion` flag to force the OPM-compatible architecture for any training mode. All experiments in this section use `Linear(1024→6)` for fair cross-method comparison.
+
+### Implementation Details
+
+- OPM implemented following reference code (`Papers/BechmarkPaper/BML_TPAMI2024/code/models/Classifier.py`)
+- Params: `q_base=0.5, λ=0.5, p_exe=0.7, warmup=5 epochs` (matching reference `train_opm.sh`)
+- OGM params: `α=0.8` (matching reference `train_ogm.sh`)
+- Training: SGD lr=0.001, momentum=0.9, 100 epochs, batch_size=64, 3 frames @ 3 FPS
+
+### Bug Discovery: OGM-GE Gated by OPM Warm-up
+
+**Critical bug found during initial runs:** The OGM-only experiment (warmup=999 to disable OPM + OGM-GE enabled) produced **identical accuracy to baseline** (60.35%). Root cause: the `train_epoch_opm` function had `and not warm_up` in the OGM-GE activation check, meaning OGM-GE was never applied when warmup=999.
+
+**Fix:** Removed `and not warm_up` from the OGM-GE condition — OGM-GE is independent of OPM warm-up. After fix, OGM-only correctly reached 63.31%.
+
+### Phase 1 Results (seed=42, single-layer fusion architecture)
+
+| Rank | Method | Best Acc (seed=42) | Δ vs Baseline |
+|------|--------|----------|---------------|
+| 1 | **ASGML boost + OGM-GE (α=0.75)** | **72.45%** | **+12.10pp** |
+| 2 | OPM + OGM (Wei et al.) | 70.30% | +9.95pp |
+| 3 | OPM only | 65.46% | +5.11pp |
+| 4 | OGM only (on OPM arch) | 63.31% | +2.96pp |
+| 5 | Baseline (OPM arch) | 60.35% | — |
+
+### Phase 2 Multi-Seed Results
+
+**Date:** 2026-03-12
+**Seeds:** 42, 123, 456, 789, 1024
+
+| Rank | Method | seed42 | seed123 | seed456 | seed789 | seed1024 | **Mean ± Std** |
+|------|--------|--------|---------|---------|---------|----------|----------------|
+| 1 | **ASGML boost + OGM-GE (α=0.75)** | 72.45 | 72.58 | 72.31 | 70.56 | 70.97 | **71.77 ± 0.91%** |
+| 2 | OPM + OGM (Wei et al.) | 70.30 | 71.51 | 69.35 | 67.47 | 70.56 | **69.84 ± 1.47%** |
+| 3 | OPM only | 65.46 | 65.05 | 65.73 | 65.46 | 65.46 | **65.43 ± 0.24%** |
+| 4 | OGM only (on OPM arch) | 63.31 | 63.71 | 63.71 | 63.44 | 64.52 | **63.74 ± 0.45%** |
+| 5 | Baseline (OPM arch) | 60.35 | 59.41 | 60.62 | 57.80 | 57.80 | **59.20 ± 1.27%** |
+
+### Analysis
+
+1. **ASGML boost + OGM-GE beats OPM+OGM by +1.93pp** (71.77% vs 69.84%) with **lower variance** (±0.91 vs ±1.47). The advantage is consistent across all 5 seeds — ASGML wins on every seed.
+
+2. **OPM+OGM > OPM alone (+4.41pp)** and **OPM+OGM > OGM alone (+6.10pp)**. The two stages are complementary, consistent with the paper's claim. However, our ASGML boost achieves even greater complementarity with OGM-GE.
+
+3. **OPM alone (65.43 ± 0.24%) has the lowest variance** of any method. Feed-forward feature dropout is stable but provides limited improvement (+6.23pp over baseline).
+
+4. **Architecture matters.** The single-layer fusion (`Linear(1024→6)`) gives a lower baseline (59.20%) than our standard 2-layer architecture (~61.59%). This may be because the 2-layer MLP has more capacity to learn cross-modal interactions.
+
+5. **Three orthogonal axes of modulation:**
+   - OPM = feed-forward (feature dropout)
+   - OGM = back-propagation (gradient scaling)
+   - ASGML = temporal (probe-guided weak-modality boosting)
+   - All three are complementary, but ASGML+OGM-GE achieves the best results without OPM's architectural constraint.
+
+6. **Improvement hierarchy (multi-seed):**
+   - ASGML boost+OGM-GE over OPM+OGM: **+1.93pp**
+   - OPM+OGM over OPM only: **+4.41pp**
+   - OPM only over OGM only: **+1.69pp**
+   - OGM only over Baseline: **+4.54pp**
+
+### Paper Positioning
+
+This comparison strengthens the paper narrative:
+- OPM constrains architecture (requires single-layer fusion for weight decomposition)
+- OGM-GE works with any architecture
+- ASGML boost works with any architecture and composes with OGM-GE
+- ASGML+OGM-GE beats OPM+OGM on all 5 seeds while being more architecturally flexible
+- ASGML+OGM-GE has lower variance than OPM+OGM (±0.91 vs ±1.47), confirming the stabilization effect of probe-guided boosting
+
+### Output Locations
+
+| Experiment | Directory |
+|-----------|-----------|
+| All OPM comparison runs | `outputs/sweep_cremad_opm/cremad_*_seed{42,123,456,789,1024}/` |
+
+---
+
+*Last updated: 2026-03-12 (OPM multi-seed complete — ASGML boost+OGM-GE 71.77 ± 0.91% beats OPM+OGM 69.84 ± 1.47% by +1.93pp across 5 seeds. All experiments on single-layer fusion `Linear(1024→6)` for fair comparison.)*

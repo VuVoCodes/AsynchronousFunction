@@ -142,6 +142,32 @@ run_phase2() {
         "cremad_baseline_opmarch:opm:--opm-q-base 0.0 --opm-lam 0.0 --opm-p-exe 0.0 --opm-warmup 999 --epochs 100"
     )
 
+    # ASGML boost + OGM-GE needs special handling (uses adaptive mode + --single-layer-fusion)
+    echo "--- Running ASGML boost + OGM-GE (OPM arch) across seeds ---"
+    for seed in "${SEEDS[@]}"; do
+        local full_id="cremad_boost_ogm_opmarch_seed${seed}"
+        local exp_dir="$OUTPUT_BASE/$full_id"
+
+        if [ -d "$exp_dir" ] && [ -f "$exp_dir/train.log" ] && grep -q "Training complete" "$exp_dir/train.log" 2>/dev/null; then
+            echo "SKIP: Already completed ($full_id)"
+            continue
+        fi
+
+        echo "Running: $full_id"
+        python "$TRAIN_SCRIPT" \
+            --config "$CONFIG" \
+            --mode adaptive \
+            --seed "$seed" \
+            --exp-name "$full_id" \
+            --output-dir "$OUTPUT_BASE" \
+            --num-frames 3 --fps 3 \
+            --single-layer-fusion \
+            --ogm-ge --alpha 0.8 \
+            --asgml-mode continuous --continuous-alpha 0.75 \
+            --epochs 100
+        echo "DONE: $full_id"
+    done
+
     echo "============================================================"
     echo "PHASE 2: Multi-seed CREMA-D OPM validation"
     echo "Seeds: ${SEEDS[*]}"
