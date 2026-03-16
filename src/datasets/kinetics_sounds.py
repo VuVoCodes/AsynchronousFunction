@@ -1,7 +1,7 @@
 """
 Kinetics-Sounds Dataset for audio-visual action recognition.
 
-Kinetics-Sounds is derived from Kinetics, focusing on 34 action classes
+Kinetics-Sounds is derived from Kinetics, focusing on 31 action classes
 that can be recognized both visually and aurally.
 
 Reference:
@@ -15,7 +15,7 @@ import numpy as np
 import librosa
 from PIL import Image
 from torch.utils.data import Dataset
-from typing import Dict, Optional, Callable, List
+from typing import Dict, Optional, Callable, List, Tuple
 import torchvision.transforms as transforms
 
 
@@ -23,15 +23,22 @@ class KineticsSoundsDataset(Dataset):
     """
     Kinetics-Sounds Dataset for audio-visual action recognition.
 
+    Supports two modes:
+    1. Directory-based: scans train/val directories for class_name/video_id/ folders
+    2. Split-file-based: uses OGM-GE-style split files (ogm_train.txt, ogm_test.txt)
+       for fair comparison with published baselines
+
     Expected directory structure:
     root/
         train/
             class_name/
                 video_id/
                     frames/
-                    audio.wav
+                    audio.wav (or mel_spec.npy)
         val/
-        test/
+            ...
+        ogm_train.txt  (optional, for OGM-GE split matching)
+        ogm_test.txt   (optional)
     """
 
     # 31 classes from "Look, Listen and Learn" (Arandjelovic & Zisserman, ICCV 2017)
@@ -56,16 +63,6 @@ class KineticsSoundsDataset(Dataset):
         n_mels: int = 128,
         num_frames: int = 3,
     ):
-        """
-        Args:
-            root: Root directory of Kinetics-Sounds dataset
-            split: 'train', 'val', or 'test'
-            visual_transform: Transform for visual input
-            audio_transform: Transform for audio spectrogram
-            sr: Audio sample rate
-            n_mels: Number of mel bands
-            num_frames: Number of frames to sample per video
-        """
         self.root = root
         self.split = split
         self.sr = sr
@@ -74,27 +71,104 @@ class KineticsSoundsDataset(Dataset):
 
         self.class_to_idx = {c: i for i, c in enumerate(self.CLASSES)}
 
-        # Default transforms
+        # Visual transforms matching OGM-GE
         if visual_transform is None:
-            self.visual_transform = transforms.Compose([
-                transforms.Resize((224, 224)),
-                transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=[0.485, 0.456, 0.406],
-                    std=[0.229, 0.224, 0.225]
-                ),
-            ])
+            if split == "train":
+                self.visual_transform = transforms.Compose([
+                    transforms.RandomResizedCrop(224),
+                    transforms.RandomHorizontalFlip(),
+                    transforms.ToTensor(),
+                    transforms.Normalize(
+                        mean=[0.485, 0.456, 0.406],
+                        std=[0.229, 0.224, 0.225]
+                    ),
+                ])
+            else:
+                self.visual_transform = transforms.Compose([
+                    transforms.Resize((224, 224)),
+                    transforms.ToTensor(),
+                    transforms.Normalize(
+                        mean=[0.485, 0.456, 0.406],
+                        std=[0.229, 0.224, 0.225]
+                    ),
+                ])
         else:
             self.visual_transform = visual_transform
 
         self.audio_transform = audio_transform
+
+        # Build video path index from all downloaded data
+        self._video_index = self._build_video_index()
+
+        # Load samples using OGM-GE split files if available, else directory scan
         self.samples = self._load_samples()
 
+    def _build_video_index(self) -> Dict[Tuple[str, int, int], str]:
+        """Build index mapping (youtube_id, start, end) -> video_path."""
+        index = {}
+        for data_split in ['train', 'val']:
+            split_dir = os.path.join(self.root, data_split)
+            if not os.path.exists(split_dir):
+                continue
+            for class_name in os.listdir(split_dir):
+                class_path = os.path.join(split_dir, class_name)
+                if not os.path.isdir(class_path):
+                    continue
+                for video_id in os.listdir(class_path):
+                    video_path = os.path.join(class_path, video_id)
+                    if not os.path.isdir(video_path):
+                        continue
+                    # Parse video_id: {youtube_id}_{start}_{end}
+                    parts = video_id.rsplit('_', 2)
+                    if len(parts) == 3:
+                        try:
+                            key = (parts[0], int(parts[1]), int(parts[2]))
+                            index[key] = video_path
+                        except ValueError:
+                            pass
+        return index
+
+    def _load_samples_from_split_file(self, split_file: str) -> List:
+        """Load samples from OGM-GE-style split file."""
+        samples = []
+        with open(split_file) as f:
+            for line in f:
+                parts = line.strip().split(',')
+                if len(parts) < 3:
+                    continue
+                vid = parts[0]
+                label = int(parts[2])
+
+                # Parse: youtube_id_startframe_endframe
+                segments = vid.rsplit('_', 2)
+                if len(segments) == 3:
+                    try:
+                        yt_id = segments[0]
+                        start = int(segments[1])
+                        end = int(segments[2])
+                        key = (yt_id, start, end)
+                        if key in self._video_index:
+                            samples.append((self._video_index[key], label))
+                    except ValueError:
+                        pass
+        return samples
+
     def _load_samples(self) -> List:
-        """Load list of samples for the split."""
+        """Load samples using OGM-GE splits if available, else directory scan."""
+        # Try OGM-GE split files first
+        if self.split == "train":
+            split_file = os.path.join(self.root, "ogm_train.txt")
+        else:
+            split_file = os.path.join(self.root, "ogm_test.txt")
+
+        if os.path.exists(split_file):
+            samples = self._load_samples_from_split_file(split_file)
+            if samples:
+                return samples
+
+        # Fallback: directory scan
         samples = []
         split_dir = os.path.join(self.root, self.split)
-
         if not os.path.exists(split_dir):
             print(f"Warning: Split directory not found: {split_dir}")
             return samples
@@ -103,12 +177,9 @@ class KineticsSoundsDataset(Dataset):
             class_path = os.path.join(split_dir, class_name)
             if not os.path.isdir(class_path):
                 continue
-
             if class_name not in self.class_to_idx:
                 continue
-
             label = self.class_to_idx[class_name]
-
             for video_id in os.listdir(class_path):
                 video_path = os.path.join(class_path, video_id)
                 if os.path.isdir(video_path):
@@ -117,9 +188,19 @@ class KineticsSoundsDataset(Dataset):
         return samples
 
     def _load_audio(self, video_path: str) -> torch.Tensor:
-        """Load and convert audio to mel spectrogram."""
+        """Load audio as mel spectrogram. Uses pre-extracted .npy if available."""
         try:
-            # Look for audio file
+            # Try pre-extracted spectrogram first (much faster)
+            npy_path = os.path.join(video_path, "mel_spec.npy")
+            if os.path.exists(npy_path):
+                log_mel_spec = np.load(npy_path)
+                spec_tensor = torch.FloatTensor(log_mel_spec).unsqueeze(0)
+                spec_tensor = torch.nn.functional.interpolate(
+                    spec_tensor.unsqueeze(0), size=(128, 128), mode='bilinear'
+                ).squeeze(0)
+                return spec_tensor
+
+            # Fallback: compute from wav
             audio_path = None
             for ext in ['.wav', '.mp3', '.flac']:
                 candidate = os.path.join(video_path, f"audio{ext}")
@@ -131,20 +212,16 @@ class KineticsSoundsDataset(Dataset):
                 return torch.zeros(1, 128, 128)
 
             waveform, sr = librosa.load(audio_path, sr=self.sr)
-
             mel_spec = librosa.feature.melspectrogram(
                 y=waveform, sr=sr, n_mels=self.n_mels
             )
             log_mel_spec = librosa.power_to_db(mel_spec, ref=np.max)
-
-            # Normalize
             log_mel_spec = (log_mel_spec - log_mel_spec.min()) / (log_mel_spec.max() - log_mel_spec.min() + 1e-8)
 
             spec_tensor = torch.FloatTensor(log_mel_spec).unsqueeze(0)
             spec_tensor = torch.nn.functional.interpolate(
                 spec_tensor.unsqueeze(0), size=(128, 128), mode='bilinear'
             ).squeeze(0)
-
             return spec_tensor
 
         except Exception as e:
@@ -152,7 +229,7 @@ class KineticsSoundsDataset(Dataset):
             return torch.zeros(1, 128, 128)
 
     def _load_visual(self, video_path: str) -> torch.Tensor:
-        """Load and stack video frames."""
+        """Load and stack video frames (OGM-GE style: evenly spaced)."""
         try:
             frame_dir = os.path.join(video_path, "frames")
             if not os.path.exists(frame_dir):
@@ -164,10 +241,13 @@ class KineticsSoundsDataset(Dataset):
             ])
 
             if not frames:
-                return torch.zeros(3 * self.num_frames, 224, 224)
+                return torch.zeros(3, self.num_frames, 224, 224)
 
-            # Sample frames uniformly
-            indices = np.linspace(0, len(frames) - 1, self.num_frames, dtype=int)
+            # OGM-GE style: evenly spaced frames
+            # seg = file_num / pick_num, indices at [seg*0+1, seg*1+1, seg*2+1] (0-indexed: [0, seg, 2*seg])
+            file_num = len(frames)
+            seg = file_num / self.num_frames
+            indices = [min(int(seg * i), file_num - 1) for i in range(self.num_frames)]
 
             frame_tensors = []
             for idx in indices:
@@ -175,11 +255,13 @@ class KineticsSoundsDataset(Dataset):
                 image = Image.open(frame_path).convert('RGB')
                 frame_tensors.append(self.visual_transform(image))
 
-            return torch.cat(frame_tensors, dim=0)
+            # Stack as (C, T, H, W) matching OGM-GE temporal format
+            stacked = torch.stack(frame_tensors, dim=0)  # (T, C, H, W)
+            return stacked.permute(1, 0, 2, 3)  # (C, T, H, W)
 
         except Exception as e:
             print(f"Error loading visual from {video_path}: {e}")
-            return torch.zeros(3 * self.num_frames, 224, 224)
+            return torch.zeros(3, self.num_frames, 224, 224)
 
     def __len__(self) -> int:
         return len(self.samples)

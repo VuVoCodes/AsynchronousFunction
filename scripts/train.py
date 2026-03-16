@@ -87,7 +87,10 @@ def get_dataset(config: dict, split: str):
         num_frames = config["dataset"].get("num_frames", 3)
         return AVEDataset(root=root, split=split, num_frames=num_frames)
     elif name == "kinetics_sounds":
-        return KineticsSoundsDataset(root=root, split=split)
+        num_frames = config["dataset"].get("num_frames", 3)
+        # KS uses 'val' instead of 'test' for evaluation
+        ks_split = "val" if split == "test" else split
+        return KineticsSoundsDataset(root=root, split=ks_split, num_frames=num_frames)
     elif name == "mosei":
         # MOSEI uses 'valid' instead of 'test' for validation, and 'test' for final eval
         mosei_split = split if split == "train" else "test"

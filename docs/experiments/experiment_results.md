@@ -24,6 +24,7 @@
 11. [CMU-MOSEI Dataset Results](#cmu-mosei-dataset-results-3-modalities)
 12. [ARL Baseline Comparison](#arl-baseline-comparison-wei-et-al-iccv-2025)
 13. [OPM Comparison](#opm-comparison-wei-et-al-tpami-2024)
+14. [Kinetics-Sounds Results](#kinetics-sounds-dataset-results)
 
 ---
 
@@ -797,4 +798,70 @@ This comparison strengthens the paper narrative:
 
 ---
 
-*Last updated: 2026-03-12 (OPM multi-seed complete — ASGML boost+OGM-GE 71.77 ± 0.91% beats OPM+OGM 69.84 ± 1.47% by +1.93pp across 5 seeds. All experiments on single-layer fusion `Linear(1024→6)` for fair comparison.)*
+## Kinetics-Sounds Dataset Results
+
+**Date:** 2026-03-16
+**Dataset:** Kinetics-Sounds (audio-visual action recognition, 31 classes)
+**Data source:** Downloaded from YouTube via yt-dlp (79% availability), 19,437 videos total
+**Train split:** OGM-GE split file (12,892 matched out of 14,799 = 87%)
+**Test split:** K400 validation set (1,228 videos)
+**Architecture:** ResNet18 encoders (pretrained ImageNet), late fusion, batch size 64, SGD lr=0.001, StepLR step=40
+**Visual augmentation:** RandomResizedCrop + RandomHorizontalFlip (train), Resize (test) — matching OGM-GE
+**Audio:** Pre-extracted librosa mel spectrograms (128×128), min-max normalized
+**Pre-extracted spectrograms:** `.npy` files for fast loading (GPU utilization: 85% vs 2% without)
+
+### Phase 1 Results (seed=42)
+
+| Rank | Method | Best Acc |
+|------|--------|----------|
+| 1 | **ASGML boost only (α=0.5)** | **80.29%** |
+| 2 | Baseline | 78.58% |
+| 3 | ASGML boost + OGM-GE (α=0.75) | 77.52% |
+| 4 | OGM-GE alone (α=0.8) | 76.79% |
+
+### Phase 2 Multi-Seed Results (in progress)
+
+**Seeds:** 42, 123, 456, 789, 1024
+
+| Rank | Method | seed42 | seed123 | seed456 | seed789 | seed1024 | **Mean ± Std** |
+|------|--------|--------|---------|---------|---------|----------|----------------|
+| 1 | **ASGML boost only (α=0.5)** | 80.29 | 80.13 | 79.15 | — | — | **TBD** |
+| 2 | Baseline | 78.58 | 78.99 | 78.75 | 79.72 | — | **TBD** |
+| 3 | Boost + OGM-GE (α=0.75) | 77.52 | 78.18 | 77.20 | — | — | **TBD** |
+| 4 | OGM-GE alone (α=0.8) | 76.79 | 77.44 | 78.26 | — | — | **TBD** |
+
+### KS Analysis (Preliminary)
+
+1. **ASGML boost-only leads** — same pattern as AVE. On low-imbalance datasets, gentle probe-guided boosting outperforms gradient throttling.
+
+2. **OGM-GE hurts on KS** (-1.79pp vs baseline in Phase 1). When modalities are balanced, gradient modulation introduces unnecessary interference.
+
+3. **Boost+OGM-GE is between baseline and OGM-GE** — the boost partially compensates for OGM-GE's harmful throttling, but the combination is suboptimal on balanced data.
+
+4. **Consistent cross-dataset pattern:**
+   - High imbalance (CREMA-D): Boost+OGM-GE best
+   - Low imbalance (AVE, KS): Boost-only best
+   - ASGML adapts — this is the key paper argument
+
+### Published Baselines for Context
+
+| Method | Published KS Acc | Source |
+|--------|-----------------|--------|
+| ARL | 74.28% | ICCV 2025 (non-reproducible, see ARL section) |
+| MMPareto | 70.13% | ICML 2024 |
+| InfoReg | 69.31% | CVPR 2025 |
+| G-Blending | 68.90% | CVPR 2020 |
+| OGM-GE | 66.35% | ARL paper |
+
+**Note:** Published numbers are not directly comparable (different train/test splits, preprocessing, hyperparameters). Our controlled comparison above is more informative.
+
+### Output Locations
+
+| Experiment | Directory |
+|-----------|-----------|
+| KS Phase 1+2 sweep | `outputs/sweep_ks/ks_*_seed{42,123,456,789,1024}/` |
+| Pre-extracted spectrograms | `data/Kinetics-Sounds/{train,val}/*/mel_spec.npy` |
+
+---
+
+*Last updated: 2026-03-16 (KS Phase 1 complete, Phase 2 in progress — boost-only leads at 80.29%, matching AVE pattern. OGM-GE splits used for fair comparison.)*

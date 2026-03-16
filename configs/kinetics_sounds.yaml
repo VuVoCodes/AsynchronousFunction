@@ -20,7 +20,7 @@ model:
 training:
   epochs: 100
   batch_size: 64
-  num_workers: 4
+  num_workers: 12
 
   # Optimizer
   optimizer: sgd
