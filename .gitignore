@@ -1,4 +1,3 @@
-.claude/
 # /CLAUDE.md
 # *.claude.md
 asgml.egg-info/
@@ -7,3 +6,14 @@ data/
 *.py[cod]
 outputs/
 .vscode/
+main.aux
+main.fdb_latexmk
+main.fls
+main.log
+main.out
+main.pdf
+main.synctex.gz
+main.synctex.gz
+main.bbl
+main.blg
+
