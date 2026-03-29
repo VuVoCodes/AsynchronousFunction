@@ -4,5 +4,6 @@ from .cremad import CREMADDataset
 from .ave import AVEDataset
 from .kinetics_sounds import KineticsSoundsDataset
 from .mosei import MOSEIDataset
+from .cmu_mosi import CMUMOSIDataset
 
-__all__ = ["CREMADDataset", "AVEDataset", "KineticsSoundsDataset", "MOSEIDataset"]
+__all__ = ["CREMADDataset", "AVEDataset", "KineticsSoundsDataset", "MOSEIDataset", "CMUMOSIDataset"]

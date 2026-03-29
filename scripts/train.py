@@ -53,13 +53,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.models import MultimodalModel, ProbeManager
 from src.models.fusion import ConcatFusion
-from src.datasets import CREMADDataset, AVEDataset, KineticsSoundsDataset, MOSEIDataset
+from src.datasets import CREMADDataset, AVEDataset, KineticsSoundsDataset, MOSEIDataset, CMUMOSIDataset
 from src.losses import (
     ASGMLLoss,
     ASGMLScheduler,
     compute_gradient_norms,
     apply_staleness_gradients,
 )
+from src.losses.cggm import CGGMModule
 from src.utils import setup_logger, AverageMeter
 from src.utils.metrics import MetricTracker
 
@@ -95,6 +96,9 @@ def get_dataset(config: dict, split: str):
         # MOSEI uses 'valid' instead of 'test' for validation, and 'test' for final eval
         mosei_split = split if split == "train" else "test"
         return MOSEIDataset(root=root, split=mosei_split)
+    elif name == "mosi":
+        mosi_split = "test" if split == "test" else split
+        return CMUMOSIDataset(root=root, split=mosi_split)
     else:
         raise ValueError(f"Unknown dataset: {name}")
 
@@ -1250,6 +1254,94 @@ def apply_ogm_ge(
     return coeffs, scores
 
 
+def train_epoch_cggm(
+    model: nn.Module,
+    dataloader: DataLoader,
+    optimizer: optim.Optimizer,
+    criterion: nn.Module,
+    cggm: CGGMModule,
+    device: torch.device,
+    epoch: int,
+    config: dict,
+    logger,
+    writer: SummaryWriter = None,
+    ogm_ge_config: dict = None,
+):
+    """Train one epoch with CGGM (Guo et al., NeurIPS 2024).
+
+    CGGM modulates both gradient magnitude and direction:
+    1. Forward main model → loss → backward
+    2. Forward per-modality classifiers on detached features
+    3. Compute accuracy-change coefficients (magnitude)
+    4. Compute gradient direction loss L_gm
+    5. Scale encoder gradients by coefficients * rou
+    6. Optimizer step
+    """
+    model.train()
+    loss_meter = AverageMeter("Loss")
+    metric_tracker = MetricTracker(config["evaluation"]["metrics"])
+    modalities = config["dataset"]["modalities"]
+    num_classes = config["dataset"]["num_classes"]
+
+    pbar = tqdm(dataloader, desc=f"Epoch {epoch}")
+
+    for batch_idx, batch in enumerate(pbar):
+        global_step = (epoch - 1) * len(dataloader) + batch_idx
+
+        inputs = {m: batch[m].to(device, non_blocking=True) for m in modalities}
+        targets = batch["label"].to(device, non_blocking=True)
+
+        # ========== Forward + Backward ==========
+        optimizer.zero_grad()
+        logits, unimodal_logits, features = model(inputs, return_features=True)
+
+        # Main task loss
+        main_loss = criterion(logits, targets)
+
+        # Add L_gm from previous iteration (CGGM applies it one step delayed)
+        l_gm_prev = cggm.get_l_gm_for_loss()
+        if l_gm_prev is not None:
+            main_loss = main_loss + cggm.lamda * l_gm_prev
+
+        main_loss.backward()
+
+        # ========== OGM-GE (optional, can combine with CGGM) ==========
+        if ogm_ge_config is not None and ogm_ge_config["enabled"]:
+            apply_ogm_ge(
+                model, unimodal_logits, targets, modalities,
+                alpha=ogm_ge_config["alpha"],
+                epoch=epoch,
+                modulation_start=ogm_ge_config["modulation_start"],
+                modulation_end=ogm_ge_config["modulation_end"],
+            )
+
+        # ========== CGGM Step ==========
+        l_gm_value, coeff = cggm.step(model, features, targets, criterion)
+
+        # ========== Gradient clipping + optimizer step ==========
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 0.8)
+        optimizer.step()
+
+        # ========== Logging ==========
+        loss_meter.update(main_loss.item())
+        with torch.no_grad():
+            if num_classes > 1:
+                preds = logits.argmax(dim=-1)
+            else:
+                preds = logits.squeeze()
+            metric_tracker.update(preds, targets)
+
+        pbar.set_postfix(loss=f"{loss_meter.avg:.4f}", mask={m: 1 for m in modalities})
+
+        if writer and batch_idx % config["logging"].get("log_interval", 20) == 0:
+            writer.add_scalar("train/loss", main_loss.item(), global_step)
+            writer.add_scalar("cggm/l_gm", l_gm_value, global_step)
+            for m in modalities:
+                writer.add_scalar(f"cggm/coeff_{m}", coeff[m], global_step)
+
+    return loss_meter.avg, metric_tracker.compute()
+
+
 def train_epoch(
     model: nn.Module,
     dataloader: DataLoader,
@@ -1705,7 +1797,7 @@ def main():
         "--mode",
         type=str,
         default="baseline",
-        choices=["baseline", "frequency", "staleness", "adaptive", "miles", "inforeg", "arl", "opm"],
+        choices=["baseline", "frequency", "staleness", "adaptive", "miles", "inforeg", "arl", "opm", "cggm"],
         help="Training mode",
     )
     parser.add_argument("--fixed-ratio", type=int, default=2, help="Fixed frequency ratio (for frequency mode)")
@@ -1736,6 +1828,13 @@ def main():
                         help="ARL: γ weight for unimodal bias regularization losses (default: 4.0)")
     parser.add_argument("--arl-start", type=int, default=5,
                         help="ARL: epoch after which to start asymmetric modulation (default: 5)")
+    # CGGM-specific arguments (Guo et al., NeurIPS 2024)
+    parser.add_argument("--cggm-rou", type=float, default=1.3,
+                        help="CGGM: ρ gradient scaling amplifier (default: 1.3)")
+    parser.add_argument("--cggm-lamda", type=float, default=0.2,
+                        help="CGGM: λ weight for gradient direction loss L_gm (default: 0.2)")
+    parser.add_argument("--cggm-cls-lr", type=float, default=5e-4,
+                        help="CGGM: classifier learning rate (default: 5e-4)")
     # Dataset overrides
     parser.add_argument("--fps", type=int, default=None,
                         help="Override dataset fps (frames per second extraction rate)")
@@ -1922,7 +2021,7 @@ def main():
 
     modalities = config["dataset"]["modalities"]
 
-    # For MOSEI with MLP backbone, detect actual feature dims from dataset
+    # For MLP backbone (pre-extracted features), detect actual feature dims from dataset
     if config["model"]["backbone"] == "mlp" and config["dataset"]["name"] == "mosei":
         config["dataset"]["text_dim"] = train_dataset.text_dim
         config["dataset"]["audio_dim"] = train_dataset.audio_dim
@@ -1931,6 +2030,11 @@ def main():
             f"MOSEI feature dims: text={train_dataset.text_dim}, "
             f"audio={train_dataset.audio_dim}, vision={train_dataset.visual_dim}"
         )
+    elif config["model"]["backbone"] == "mlp" and config["dataset"]["name"] == "mosi":
+        dims = train_dataset.get_dims()
+        for k, v in dims.items():
+            config["dataset"][f"{k}_dim"] = v
+        logger.info(f"MOSI feature dims: {dims}")
 
     # Create model
     # Build encoder config per modality
@@ -2286,6 +2390,102 @@ def main():
         return  # Exit early for ARL mode
 
     # ========== OPM Mode: Separate Training Loop ==========
+    if args.mode == "cggm":
+        logger.info(
+            f"CGGM mode: ρ={args.cggm_rou}, λ={args.cggm_lamda}, "
+            f"cls_lr={args.cggm_cls_lr}"
+        )
+
+        # CGGM uses SGD like other methods
+        optimizer = torch.optim.SGD(
+            model.parameters(),
+            lr=config["training"]["lr"],
+            momentum=config["training"].get("momentum", 0.9),
+            weight_decay=config["training"].get("weight_decay", 1e-4),
+        )
+        lr_scheduler = get_scheduler(optimizer, config)
+
+        # Create CGGM module
+        cggm = CGGMModule(
+            modalities=modalities,
+            feature_dim=config["model"]["feature_dim"],
+            num_classes=config["dataset"]["num_classes"],
+            rou=args.cggm_rou,
+            lamda=args.cggm_lamda,
+            cls_lr=args.cggm_cls_lr,
+            device=device,
+        )
+
+        # OGM-GE config if combined
+        ogm_ge_config = None
+        if args.ogm_ge:
+            logger.info(f"CGGM+OGM-GE combined: alpha={args.alpha}")
+            ogm_ge_config = {
+                "enabled": True,
+                "alpha": args.alpha,
+                "modulation_start": args.modulation_start,
+                "modulation_end": args.modulation_end,
+            }
+
+        criterion = nn.CrossEntropyLoss()
+
+        start_epoch = 1
+        best_acc = 0.0
+
+        # CGGM Training Loop
+        for epoch in range(start_epoch, config["training"]["epochs"] + 1):
+            train_loss, train_metrics_dict = train_epoch_cggm(
+                model, train_loader, optimizer, criterion, cggm,
+                device, epoch, config, logger,
+                writer=writer,
+                ogm_ge_config=ogm_ge_config,
+            )
+
+            if lr_scheduler is not None:
+                lr_scheduler.step()
+
+            # Evaluate
+            test_metrics = evaluate_miles(model, test_loader, device, config)
+
+            log_str = (
+                f"Epoch {epoch}: "
+                f"Train Loss={train_loss:.4f}, "
+                f"Train Acc={train_metrics_dict.get('accuracy', 0):.4f}, "
+                f"Test Acc={test_metrics['accuracy']:.4f}, "
+                f"Test F1={test_metrics['f1_macro']:.4f}"
+            )
+            logger.info(log_str)
+
+            writer.add_scalar("test/accuracy", test_metrics["accuracy"], epoch)
+            writer.add_scalar("test/f1_macro", test_metrics["f1_macro"], epoch)
+            writer.add_scalar("test/loss", test_metrics["loss"], epoch)
+
+            if test_metrics["accuracy"] > best_acc:
+                best_acc = test_metrics["accuracy"]
+                best_checkpoint = {
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "best_acc": best_acc,
+                    "config": config_copy,
+                }
+                torch.save(best_checkpoint, output_dir / "best_model.pt")
+                logger.info(f"New best model saved with accuracy: {best_acc:.4f}")
+
+            if epoch % config["logging"]["save_interval"] == 0:
+                checkpoint_data = {
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "best_acc": best_acc,
+                    "config": config_copy,
+                }
+                torch.save(checkpoint_data, output_dir / f"checkpoint_epoch{epoch}.pt")
+
+        logger.info(f"Training complete. Best accuracy: {best_acc:.4f}")
+        writer.close()
+        return  # Exit early for CGGM mode
+
     if args.mode == "opm":
         logger.info(
             f"OPM mode: q_base={args.opm_q_base}, λ={args.opm_lam}, "
