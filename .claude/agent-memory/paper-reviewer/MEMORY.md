@@ -5,7 +5,7 @@
 - Current framing: "Probe-Guided Gradient Boosting for Balanced Multimodal Learning" — decoupled probes + gradient boosting
 - The pivot happened because pure async/staleness mechanisms showed no improvement over baseline on CREMA-D
 - Key result: boost+OGM-GE works, boost-only ~ baseline on high-imbalance data
-- See `introduction-review.md` for detailed review of the Introduction section
+- See `introduction-review.md` for detailed review of the Introduction section (v3: score 7.5/10)
 
 ## Key Experimental Facts
 - CREMA-D (3-frame): Boost+OGM-GE 71.45 +/- 1.71%, baseline 61.59%, OGM-GE 69.14%
@@ -23,3 +23,11 @@
 - "Dataset-adaptive" claim is post-hoc pattern, not a designed property
 - Contribution 5 (task-agnostic) claims regression generality but only MOSEI regression shown
 - Split-batch protocol halves effective batch size — overhead not discussed
+- Contribution 5 still mentions "segmentation" with zero segmentation experiments
+- MOSEI: OGM-GE alone >= boost+OGM-GE; method doesn't demonstrably help there
+- MOSI: 1 seed only — still not addressed as of v3 intro review
+
+## Introduction Review History
+- v1: Initial review, identified overclaims, bib errors, em-dash issues
+- v2: Score 6.5/10 — many fixes but KS/MOSI/MOSEI/segmentation issues remained
+- v3: Score 7.5/10 — most bib/formatting issues fixed, remaining: KS significance, MOSI seeds, segmentation claim, MOSEI framing
