@@ -959,13 +959,28 @@ CGGM modulates both gradient **magnitude** and **direction**:
 | 4 | ASGML boost only (α=0.5) | 72.74% |
 | 5 | CGGM (ρ=1.3, λ=0.2) | 59.77% |
 
+### Phase 2 Multi-Seed Results
+
+**Date:** 2026-03-29
+**Seeds:** 42, 123, 456, 789, 1024
+
+| Rank | Method | seed42 | seed123 | seed456 | seed789 | seed1024 | **Mean ± Std** |
+|------|--------|--------|---------|---------|---------|----------|----------------|
+| 1 | OGM-GE alone (α=0.8) | 73.32 | 71.43 | 73.76 | 71.87 | 73.03 | **72.68 ± 0.89%** |
+| 2 | ASGML boost + OGM-GE (α=0.75) | 73.47 | 70.99 | 73.62 | 72.45 | 72.45 | **72.60 ± 0.94%** |
+| 3 | Baseline | 73.18 | 71.87 | 72.74 | 72.01 | 72.30 | **72.42 ± 0.48%** |
+| 4 | ASGML boost only (α=0.5) | 72.74 | 70.55 | 71.57 | 71.87 | 72.74 | **71.89 ± 0.82%** |
+| 5 | CGGM (ρ=1.3, λ=0.2) | 59.77 | 58.75 | 59.62 | 59.62 | 59.48 | **59.45 ± 0.36%** |
+
 ### MOSI Analysis
 
-1. **All ASGML/OGM-GE methods within ~0.7pp.** MOSI with pre-extracted features has very limited modality imbalance — text dominates, and mean-pooled GloVe features provide a strong signal regardless of modulation.
+1. **All ASGML/OGM-GE methods within ~0.8pp** (71.89–72.68%). MOSI with pre-extracted features has very limited modality imbalance — text dominates, and mean-pooled GloVe features provide a strong signal regardless of modulation.
 
-2. **Boost+OGM-GE narrowly leads** (73.47%), consistent with the MOSEI pattern where OGM-GE helps on text-dominant 3-modality datasets.
+2. **OGM-GE edges ahead** (72.68%), with boost+OGM-GE close behind (72.60%). Consistent with the MOSEI pattern where OGM-GE helps on text-dominant 3-modality datasets.
 
-3. **CGGM fails on MOSI** (59.77%, -13.41pp vs baseline). Even on sentiment analysis (CGGM's target task), the implementation doesn't transfer to our MLP architecture.
+3. **Baseline has lowest variance** (±0.48%) — stable training on a small, balanced dataset.
+
+4. **CGGM fails on MOSI** (59.45 ± 0.36%, -12.97pp vs baseline). Even on sentiment analysis (CGGM's target task type), the MLP encoders in our architecture don't benefit from CGGM's modulation.
 
 ### Output Locations
 
@@ -984,10 +999,10 @@ CGGM modulates both gradient **magnitude** and **direction**:
 | **KS** | audio + visual | Low | Boost only | **79.17 ± 0.97%** | **+0.12pp** | 73.18 ± 0.27% |
 | **AVE** | audio + visual | Low | Boost only | **87.41 ± 0.26%** | **+0.87pp** | 76.72 ± 0.42% |
 | **CMU-MOSEI** | text + audio + vision | Medium | OGM-GE / Boost+OGM-GE | **72.47 ± 0.70%** | **+2.05pp** | 68.05 ± 0.46% |
-| **CMU-MOSI** | text + audio + vision | Low | Boost+OGM-GE | **73.47%** (1 seed) | **+0.29pp** | 59.45 ± 0.36% |
+| **CMU-MOSI** | text + audio + vision | Low | OGM-GE | **72.68 ± 0.89%** | **+0.26pp** | 59.45 ± 0.36% |
 
 **Pattern:** ASGML outperforms CGGM on all 5 datasets (multi-seed confirmed). CGGM's gradient magnitude+direction modulation doesn't transfer well from Transformer to CNN/MLP architectures. ASGML's probe-guided boosting is architecture-agnostic and adapts to imbalance level — it never hurts performance, unlike both OGM-GE (hurts on balanced datasets) and CGGM (hurts everywhere on our architectures).
 
 ---
 
-*Last updated: 2026-03-29 (CGGM multi-seed complete — ASGML beats CGGM on all 5 datasets. MOSI baselines done. 5 benchmarks total: CREMA-D, KS, AVE, MOSEI, MOSI.)*
+*Last updated: 2026-03-31 (MOSI multi-seed complete — all methods within ~0.8pp on this low-imbalance dataset. CGGM multi-seed confirmed across all 5 datasets. Full experimental coverage: 5 datasets × 5 seeds × 5 methods.)*
