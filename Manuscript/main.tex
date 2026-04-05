@@ -68,94 +68,34 @@ Multimodal learning integrates complementary information from heterogeneous sour
 % Cite: wang2020gblending (first empirical identification), peng2022ogmge (OGM-GE)
 % 3-4 sentences.
 
-This underperformance stems from a well-documented phenomenon variously termed \emph{modality laziness} or the \emph{greedy modality} effect: in late-fusion architectures, the modality that learns discriminative features more rapidly comes to dominate the shared classification objective, thereby suppressing the gradient signal available to slower-learning modalities~\citep{wang2020gblending,peng2022ogmge}. The imbalance is pervasive across domains: audio typically dominates visual features in emotion recognition tasks such as CREMA-D~\citep{cao2014cremad}, while textual input tends to overshadow acoustic and visual cues in sentiment analysis~\citep{peng2022ogmge}.
+This underperformance stems from a well-documented phenomenon variously termed \emph{modality laziness} or the \emph{greedy modality} effect: in late-fusion architectures, the modality that learns discriminative features more rapidly comes to dominate the shared classification objective, thereby suppressing the gradient signal available to slower-learning modalities~\citep{wang2020gblending,peng2022ogmge}. For example, audio typically dominates visual features in emotion recognition tasks such as CREMA-D~\citep{cao2014cremad}, while textual input tends to overshadow acoustic and visual cues in sentiment analysis~\citep{peng2022ogmge}.
 
+% --- P3: State-of-the-art + Gap (4 sentences) ---
+% Many methods exist, dominated by throttling paradigm.
+% Key limitation: boosting the weak fails with coupled monitoring.
 
-% --- P3: The Prime Learning Window ---
-% Recent theory explains WHY: gradient dynamics visit saddle manifolds corresponding to
-% unimodal solutions. Only a SUBSET of modalities are learned in early training.
-% The dominant modality's faster convergence pulls the network into a unimodal basin.
-% Once this window closes, the weaker modality is permanently underutilized.
-% Cite: huang2022modality (ICML 2022 — first proof of modality competition),
-%       du2023suppression (ICML 2023 — feature suppression theory),
-%       zhang2024unimodal (ICML 2024 — architecture-dependent phase duration)
-% 3-4 sentences.
+Over thirty methods have been proposed to address modality imbalance since 2020~\citep{peng2022ogmge,li2023agm,wei2024mmpareto,guo2024cggm,wei2024opm,fan2023pmr,kontras2024mlgm,gao2025arm,huang2025inforeg,wei2025arl}, yet the vast majority share a common design bias: they intervene primarily by \emph{throttling} the dominant modality's gradient contribution, leaving direct amplification of the weaker modality largely unexplored. The natural alternative, \emph{boosting} the weaker modality, has been explicitly tested and found to fail: \citet{wei2024opm} report that their boost variant OGM* yields no meaningful improvement over the unmodified baseline. The reason is structural; in late-fusion architectures, every encoder's gradient shares the loss derivative $\partial \loss / \partial f(\mathbf{x}_i)$, which is itself dominated by the strong modality, so amplifying the weak modality's gradient merely scales up a corrupted signal. Recent methods take partial steps toward addressing this limitation~\citep{yang2025iprm,jiang2025aug}, but continue to monitor imbalance through signals coupled to the joint training objective, the very source of the bias.
 
-Recent theoretical work provides a principled explanation for this imbalance. \citet{huang2022modality} prove that gradient dynamics in jointly trained multimodal networks visit saddle manifolds corresponding to unimodal solutions, establishing that only a subset of modalities are effectively learned during an initial \emph{unimodal phase} whose duration can be computed exactly under a Gaussian mixture model. \citet{du2023suppression} further show that the dominant modality does not merely outpace the weaker one but actively suppresses its feature development through the shared optimization objective. Subsequent analysis by \citet{zhang2024unimodal} extends these results to deep linear networks, demonstrating that the duration of the unimodal phase depends on both architecture and initialization, indicating that modality suppression is a structural property of joint training rather than an artifact of specific hyperparameter choices.
+% --- P4: Proposed method (high-level, 4 sentences) ---
+% Probe-guided gradient boosting with decoupled monitoring.
+% Composable with existing throttling methods.
+% No implementation details (save for Section 3).
 
+We propose \emph{probe-guided gradient boosting}, a method that enables effective weak-modality amplification by decoupling the monitoring mechanism from the joint training objective. Lightweight linear probes~\citep{alain2017understanding}, trained independently on each encoder's representations, provide an unbiased per-modality estimate of representation quality that is not contaminated by the dominant modality's influence on the shared loss. The resulting probe-detected utilization gap is converted into a continuous scaling factor that directly amplifies the weaker modality's encoder gradients. Because this intervention operates solely on encoder gradients and requires no modification to the loss function or fusion architecture, it is explicitly \emph{composable} with existing throttling methods: combining our probe-guided boost with gradient throttling yields two-sided pressure toward modality balance.
 
-% --- P4: Existing solutions — the throttle-dominant paradigm ---
-% The dominant response: gradient modulation methods that THROTTLE the strong modality.
-% OGM-GE: scale down dominant gradient via discriminative ratio + Gaussian noise.
-% CGGM: coupled auxiliary classifiers for magnitude + direction modulation.
-% OPM: drop dominant features in feed-forward. ARL: asymmetric loss weighting.
-% Also mention: AGM (Shapley-value), MMPareto (Pareto optimization), MLGM, ARM, InfoReg.
-% KEY OBSERVATION: This is a crowded field (34+ papers), but they overwhelmingly share
-% one design choice: they intervene by REDUCING the dominant modality's contribution.
-% Even CGGM, which claims to do both, primarily throttles (its boost coefficient B_mi
-% is dominated by the throttling term).
-% Cite: peng2022ogmge, guo2024cggm, wei2024opm, li2023agm, wei2024mmpareto
-% 4-5 sentences.
+% --- P5: Main results (3 sentences) ---
+% Experiments on 6 datasets. Key quantitative results.
 
-A substantial body of work has emerged to address this imbalance, with over thirty methods proposed since 2020, yet the vast majority share a common design bias: they intervene primarily by \emph{throttling} the dominant modality's contribution. OGM-GE, the foundational method in this line, computes a discriminative ratio between modalities and scales down the dominant gradient through a tanh-based modulation function, supplemented with Gaussian noise to encourage exploration of suppressed features~\citep{peng2022ogmge}. Subsequent approaches diversify the mechanism of intervention: Shapley-value attribution for gradient reweighting~\citep{li2023agm}, Pareto optimization to resolve inter-modality gradient conflicts~\citep{wei2024mmpareto}, dynamic feature dropout of the dominant modality during the forward pass~\citep{wei2024opm}, and coupled auxiliary classifiers that modulate both gradient magnitude and direction~\citep{guo2024cggm}, while further methods explore loss-level reweighting, information-theoretic regularization, and multi-level gradient manipulation~\citep{kontras2024mlgm,gao2025arm,huang2025inforeg}. Despite this methodological diversity, the field converges on a single strategy: suppressing the dominant modality's influence so that weaker modalities receive comparatively stronger learning signals. Even CGGM, which explicitly introduces both throttling and boosting coefficients, produces scaling factors that are in practice dominated by the throttling term~\citep{guo2024cggm}, leaving direct amplification of the weaker modality largely unexplored.
+We conduct extensive experiments on six benchmarks spanning audio-visual classification (CREMA-D~\citep{cao2014cremad}, AVE~\citep{tian2018ave}, Kinetics-Sounds~\citep{arandjelovic2017kinetics}), multimodal sentiment regression (CMU-MOSEI~\citep{zadeh2018mosei}, CMU-MOSI~\citep{zadeh2016mosi}), and medical image segmentation (BraTS 2021~\citep{baid2021brats}). On the high-imbalance CREMA-D benchmark, combining probe-guided boosting with OGM-GE achieves $71.45 \pm 1.71\%$ accuracy ($+9.86$ percentage points over the baseline), and the method yields consistent improvements across all six datasets, outperforming all compared baselines including CGGM~\citep{guo2024cggm}. The method further exhibits dataset-adaptive behavior: boost combined with throttling is preferred under high imbalance, while boost-only is sufficient when modalities are already well-balanced.
 
-
-% --- P5: The gap — boosting the weak fails with coupled monitoring ---
-% A natural alternative: instead of throttling the dominant, boost the weak.
-% But Wei et al. (TPAMI 2024) explicitly tested this: OGM* (boost-weak variant) FAILED.
-% Why? In late fusion, all modality gradients share the loss derivative dL/df,
-% which is dominated by the strong modality. Boosting with a coupled signal simply
-% amplifies a corrupted gradient.
-% IPRM (IJCAI 2025) probes imbalance but uses coupled live-model predictions.
-% AUG (NeurIPS 2025) does gradient boosting but with coupled loss-based detection.
-% The missing piece: boost-weak CAN work, but only with DECOUPLED monitoring.
-% Cite: wei2024opm (OGM* failure), yang2025iprm, jiang2025aug
-% 4-5 sentences. This is the CRITICAL paragraph that sets up our contribution.
-
-A natural alternative to throttling the dominant modality is to directly \emph{boost} the weaker one's gradient signal. However, \citet{wei2024opm} explicitly tested this strategy, a variant they term OGM*, and found that it fails to reduce the modality discrepancy ratio, yielding no meaningful improvement over the unmodified baseline. The underlying reason is structural: in late-fusion architectures, the gradient for every encoder shares the same loss derivative $\partial \loss / \partial f(\mathbf{x}_i)$, a term that is itself dominated by the strong modality's contribution to the fused prediction. Amplifying the weak modality's gradient therefore merely scales up a signal that is already corrupted by the dominant modality's influence on the shared objective. Recent methods take steps toward addressing this limitation: IPRM introduces a two-pass probe-and-rebalance scheme but monitors imbalance through KL divergence between unimodal and fused predictions, coupling detection to the very objective that produces the bias~\citep{yang2025iprm}, while AUG performs explicit gradient boosting with configurable auxiliary classifiers but relies on coupled loss-based signals to identify which modality requires amplification~\citep{jiang2025aug}. These results suggest that gradient boosting of weaker modalities is viable in principle, but requires a monitoring mechanism that is \emph{decoupled} from the joint training objective, a condition that, to the best of our knowledge, no existing method satisfies.
-
-
-% --- P6: Our approach — Probe-Guided Gradient Boosting ---
-% We propose probe-guided gradient boosting for balanced multimodal learning.
-% Key idea 1: Decoupled probe monitoring — lightweight linear probes on DETACHED features
-%   (.detach() prevents gradient flow). Separate optimizers. Split-batch evaluation
-%   (train on first half, evaluate on second) prevents probe overfitting.
-% Key idea 2: Probe-detected utilization gap → continuous gradient scaling that
-%   BOOSTS the weaker modality's encoder gradients.
-% Key idea 3: Designed as a COMPLEMENT to existing throttling methods.
-%   Combining boost (ours) + throttle (OGM-GE) = two-sided pressure.
-% Distinguish from: CGGM (coupled classifiers), IPRM (coupled probes, fusion-level),
-%   AUG (coupled detection, adds entire classifiers).
-% 3-4 sentences.
-
-We propose \emph{probe-guided gradient boosting}, a method that satisfies this decoupling condition. Lightweight linear probes are attached to each encoder's feature representations via an explicit \texttt{detach()} operation that severs the computation graph, ensuring that no probe gradient flows back into the encoders; the probes maintain separate optimizers and are trained and evaluated on disjoint halves of each batch (split-batch protocol), providing an unbiased, per-modality estimate of representation quality at each training step. The resulting probe accuracy gap is then converted into a continuous scaling factor that directly amplifies the weaker modality's encoder gradients, boosting learning where it is most needed rather than suppressing where it is least. Because this intervention operates solely on encoder gradients and requires no modification to the loss function or fusion architecture, it is explicitly composable with existing throttling methods: combining our probe-guided boost with OGM-GE's throttle yields two-sided pressure, simultaneously amplifying the weaker modality and attenuating the dominant one. As we show in Section~\ref{sec:experiments}, this combination is most effective on high-imbalance benchmarks, where it outperforms either intervention alone by a substantial margin, while on low-imbalance datasets the probe signal naturally attenuates, and boost-only is preferred.
-
-
-% --- P7: Dataset-adaptive behavior ---
-% A key empirical finding: the method automatically adapts to the imbalance level.
-% High imbalance (CREMA-D \citep{cao2014cremad}): boost+throttle is optimal → two-sided pressure needed.
-% Low imbalance (AVE \citep{tian2018ave}, KS \citep{arandjelovic2017kinetics}): boost-only is optimal → throttling HURTS balanced data.
-% Also mention CMU-MOSEI \citep{zadeh2018mosei} for 3-modality generalization.
-% This is a feature, not a limitation: pure throttling methods (OGM-GE) degrade on
-% balanced datasets (-1.8pp on KS), while our method gracefully reduces intervention.
-% No existing method demonstrates this adaptive property.
-% 2-3 sentences.
-
-Crucially, this probe-guided mechanism adapts naturally to the degree of imbalance present in a given dataset. On high-imbalance benchmarks such as CREMA-D~\citep{cao2014cremad}, the combination of boosting and throttling yields the largest gains ($+9.86$ pp over baseline), whereas on lower-imbalance datasets such as AVE~\citep{tian2018ave} and Kinetics-Sounds~\citep{arandjelovic2017kinetics}, boost-only is preferred, as throttling in these settings actively degrades performance (OGM-GE reduces accuracy by $1.8$ pp on Kinetics-Sounds relative to the baseline). The method further generalizes to three-modality settings on CMU-MOSEI~\citep{zadeh2018mosei} and CMU-MOSI~\citep{zadeh2016mosi}. To the best of our knowledge, no existing modality-balancing method explicitly exhibits this dataset-adaptive property; pure throttling approaches necessarily intervene even when modalities are already well-balanced, whereas our probe-guided signal naturally attenuates the boost when the utilization gap is small.
-
-
-% --- P8: Contributions ---
+% --- Contributions (3 bullets) ---
 \paragraph{Contributions.}
 \begin{itemize}
-    \item We identify that the dominant paradigm for addressing modality imbalance, throttling the strong modality's gradient, is \emph{one-sided}, and that the natural complement, boosting the weak modality, fails with standard coupled monitoring signals. We trace this failure to shared loss derivatives in late-fusion architectures.
+    \item We identify a \emph{throttle-only bias} in the modality-balancing literature and show that the natural complement, boosting the weaker modality, fails when the monitoring signal is coupled to the joint training objective. We trace this failure to shared loss derivatives in late-fusion architectures.
 
-    \item We propose \emph{probe-guided gradient boosting}, which uses fully decoupled linear probes (detached features, separate optimizers, split-batch evaluation) to obtain an unbiased estimate of each modality's representation quality, enabling effective weak-modality boosting.
+    \item We propose \emph{probe-guided gradient boosting}, which uses fully decoupled linear probes to obtain an unbiased estimate of each modality's representation quality, enabling effective weak-modality amplification that is composable with existing throttling methods.
 
-    \item We show that probe-guided boosting is explicitly \emph{composable} with existing gradient throttling methods: combining our boost with OGM-GE yields two-sided pressure toward modality balance, achieving $+9.86$ pp over baseline on CREMA-D and outperforming either intervention alone.
-
-    \item We demonstrate that the method is \emph{dataset-adaptive}: boost+throttle dominates under high modality imbalance, while boost-only is preferred when modalities are balanced, avoiding the performance degradation that pure throttling methods exhibit on balanced data (e.g., OGM-GE loses $1.8$ pp on Kinetics-Sounds).
-
-    \item Because the gradient boosting mechanism is \emph{task-agnostic}, operating on encoder gradients rather than predictions, the framework extends beyond classification to regression, segmentation, and other tasks by simply adapting the probe head and utilization metric. We validate this generality across both classification and regression benchmarks.
+    \item We validate the method on six benchmarks spanning classification, regression, and segmentation, demonstrating consistent improvements over all compared baselines and dataset-adaptive behavior in which the probe signal naturally attenuates when modalities are already balanced.
 \end{itemize}
 
 
