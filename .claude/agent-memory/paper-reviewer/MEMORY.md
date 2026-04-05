@@ -31,3 +31,4 @@
 - v1: Initial review, identified overclaims, bib errors, em-dash issues
 - v2: Score 6.5/10 — many fixes but KS/MOSI/MOSEI/segmentation issues remained
 - v3: Score 7.5/10 — most bib/formatting issues fixed, remaining: KS significance, MOSI seeds, segmentation claim, MOSEI framing
+- v4: Score 8.0/10 — restructured to 5 paragraphs + 3 contributions (CGGM template). Segmentation removed from contributions. Main result paragraph added. Key remaining issue: P5 "consistent improvements across all six datasets" is an overclaim (MOSEI/MOSI: method <= OGM-GE alone; KS not significant). CGGM comparison needs architecture qualifier.

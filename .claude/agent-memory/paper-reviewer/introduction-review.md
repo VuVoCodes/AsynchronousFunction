@@ -1,62 +1,92 @@
-# Introduction Review — v3 (2026-03-30)
+# Introduction Review History
 
-## File Reviewed
-`/Users/vuvo/Desktop/RMIT-AI/My PhD/Neurips2026-AsyncFunc/Manuscript/main.tex` lines 52-159
+## v4 (2026-04-05) — Score: 8.0/10
 
-## Review Score: 7.5/10
+### File Reviewed
+`/Users/vuvo/Desktop/RMIT-AI/My PhD/Neurips2026-AsyncFunc/Manuscript/main.tex` lines 52-99
 
-## What Changed Since v2
-- +9.86pp reduced from 3 to 2 occurrences (removed from P7)
+### What Changed Since v3
+- Restructured from 7 paragraphs + 5 contributions to 5 paragraphs + 3 contributions
+- Followed CGGM (NeurIPS 2024) template
+- Added P5 (main results paragraph) — was MISSING in v3
+- Removed segmentation from contributions (was in C5 before)
+- Compressed SOTA coverage into single P3 paragraph (throttle-only bias framing)
+- Method description (P4) is now high-level, no split-batch/implementation details
+- "Dataset-adaptive" framing retained in P5 and C3
+
+### Key Improvements
+- 5-paragraph structure is much tighter than v3's 7 paragraphs
+- 3 contributions are non-overlapping and well-scoped (diagnosis, method, validation)
+- P3 throttle/boost gap identification is the best paragraph — sharp, well-cited, technically grounded
+- Main result paragraph (P5) immediately signals empirical substance
+- No segmentation in contributions (fixed from v3)
+- P4 is appropriately abstract, no implementation details leaked
+
+### Remaining Issues
+
+#### Major
+1. **"Consistent improvements across all six datasets" (P5)** — OVERCLAIM. On MOSEI: OGM-GE alone >= boost+OGM-GE. On MOSI: OGM-GE > boost+OGM-GE. On KS: +0.12pp is not significant. The method does not "consistently improve" on all six.
+2. **"Outperforming all compared baselines including CGGM" (P5)** — CGGM was run on CNN/MLP, not its native Transformer. Needs qualification or removal of explicit CGGM mention.
+
+#### Moderate
+3. **"Dataset-adaptive behavior" (P5, C3)** — post-hoc observation, not designed property. C3 uses better language ("probe signal naturally attenuates") but P5 presents it as a deliberate feature.
+4. **BraTS listed but no result given** — included in six benchmarks list but no number in P5. BraTS improvement is only +0.21pp Dice.
+5. **P3 shared loss derivative notation** — $\partial \mathcal{L} / \partial f(\mathbf{x}_i)$ is ambiguous; each encoder maps to different subspace. Argument is sound but notation imprecise.
+
+#### Minor
+6. Missing comma in P1 compound sentence
+7. "audio typically dominates visual features" phrasing ambiguity in P2
+8. "Over thirty methods" — strong quantitative claim, needs backing
+9. Semicolon vs colon style in P3
+10. "We trace" in C1 implies formal analysis — should match what Section 3 provides
+11. No mention of computational overhead in intro
+
+### Factual Claims Audit (P5)
+- +9.86pp on CREMA-D: CORRECT
+- "consistent improvements across all six": INCORRECT (MOSEI, MOSI: method <= OGM-GE alone; KS: not significant)
+- "outperforming all compared baselines including CGGM": MISLEADING (architecture mismatch)
+- "dataset-adaptive behavior": POST-HOC observation, not designed
+- BraTS included in scope but no result shown: INCOMPLETE
+
+### Strengths Confirmed
+- Throttle/boost framing is novel and compelling (P3 is excellent)
+- Narrative arc: promise -> problem -> gap -> solution -> evidence
+- 3 contributions are clean and non-overlapping
+- Citation density appropriate (10 methods in P3, foundational refs in P1-P2)
+- No em-dashes in body text
+- P4 method description is appropriately high-level
+
+### Recommendations for v5
+1. CRITICAL: Soften P5 "consistent improvements across all six datasets" — replace with honest framing (strongest under high imbalance, competitive elsewhere)
+2. Remove "including CGGM" from P5 or add architecture qualifier
+3. Make P5 "dataset-adaptive" language match C3's more precise "probe signal naturally attenuates"
+4. Either add BraTS result to P5 or acknowledge the modest gain
+5. Fix P3 notation: use $\partial \mathcal{L}/\partial z$ for shared fused representation gradient
+6. Add one phrase about overhead in P4 (e.g., "negligible overhead")
+
+---
+
+## v3 (2026-03-30) — Score: 7.5/10
+
+### What Changed Since v2
+- +9.86pp reduced from 3 to 2 occurrences
 - "Consistently outperforms" replaced with "most effective on high-imbalance benchmarks"
-- 11+ bib entries corrected (full author lists, correct titles)
-- "and others" removed from all bib entries
+- 11+ bib entries corrected
 - "No existing method" qualified with "explicitly"
-- "Decoupled" now precisely defined in P6 (detach(), separate optimizers, split-batch protocol)
-- Citation key fixed: huang2022unimodal → huang2022modality in body text
-- MMPareto bib: now correct (ICML 2024, PMLR volume 235)
-- Zhang 2024 bib: now correct (Zhang, Latham, Saxe; ICML 2024)
-- wei2024opm title confirmed correct ("On-the-fly Modulation for Balanced Multimodal Learning")
-- Em-dashes: only in comments, none in body text
+- "Decoupled" precisely defined (detach(), separate optimizers, split-batch)
+- Multiple citation key fixes
 
-## Remaining Issues
+### Remaining Issues (at v3)
+- KS improvement (+0.12pp) not significant
+- MOSI only 1 seed
+- Contribution 5 mentioned segmentation with zero experiments
+- MOSEI: method doesn't demonstrably help
+- "Dataset-adaptive" claim was post-hoc
 
-### Major (still present)
-1. **KS improvement (+0.12pp) is not statistically significant** — P7 groups AVE and KS together as "boost-only is preferred" but KS improvement is within noise. The claim is technically correct (boost-only IS preferred over boost+throttle on KS) but misleading by implication that boost-only helps on KS.
-2. **MOSI has only 1 seed** — mentioned alongside multi-seed datasets without qualification in P7.
-3. **Contribution 5 mentions "segmentation"** — no segmentation experiments exist. Only classification + regression validated.
-4. **MOSEI framing in P7** — "generalizes to three-modality settings" is vague. Actually: OGM-GE alone (72.47%) >= boost+OGM-GE (72.43%). The method doesn't demonstrably help on MOSEI.
-5. **"dataset-adaptive property" claim** — still somewhat strong. DWA, ReconBoost adapt intervention to dataset characteristics. The qualifier "explicitly" helps but may not survive reviewer scrutiny.
+---
 
-### Moderate
-6. **wei2024opm bib title** — Previous review flagged incorrectly; title IS correct per official TPAMI paper.
-7. **P6 sentence complexity** — The paragraph is a single block of dense text. The sentence about composability runs long (~60 words).
-8. **Abstract is still TODO** — needs to be written.
+## v2 (2026-03-28) — Score: 6.5/10
+- Many fixes from v1 but KS/MOSI/MOSEI/segmentation issues remained
 
-### Minor
-9. No em-dashes in body text (FIXED)
-10. Comments still use --- and em-dashes (cosmetic, acceptable)
-
-## Strengths Confirmed
-- Throttle/boost framing is novel and compelling
-- OGM* failure analysis (P5) is strongest paragraph — effective gap identification
-- Narrative arc is strong (problem -> theory -> gap -> solution -> evidence)
-- Clean prose, well-structured
-- Good citation coverage (15+ methods referenced)
-- Decoupling mechanism now precisely defined (detach, separate optimizers, split-batch)
-- "Most effective on high-imbalance benchmarks" is accurate
-
-## Factual Claims Status
-- +9.86pp on CREMA-D: CORRECT (appears 2x: P7 and Contribution 3)
-- -1.80pp OGM-GE on KS: CORRECT
-- boost-only preferred on AVE/KS: CORRECT (though KS margin negligible)
-- "outperforms either alone" on CREMA-D: CORRECT
-- "generalizes to three-modality": MISLEADING (method doesn't add value on MOSEI)
-- MOSI generalization: INSUFFICIENT EVIDENCE (1 seed)
-- "no existing method explicitly exhibits this": DEBATABLE but defensible with "explicitly"
-
-## Key Recommendations for v4
-1. Add "(+0.87 pp)" after AVE mention, drop KS from the "boost-only is preferred" grouping or add qualifier
-2. Either run multi-seed MOSI or remove from P7, keep only MOSEI
-3. Remove "segmentation" from Contribution 5 — only mention validated tasks
-4. Reframe MOSEI: "extends to three-modality settings" is fine if Section 4 is honest about OGM-GE carrying the improvement
-5. Consider reducing +9.86pp to 1 occurrence (Contribution 3 only) and use qualitative language in P7
+## v1 (2026-03-25) — Initial review
+- Identified overclaims, bib errors, em-dash issues
