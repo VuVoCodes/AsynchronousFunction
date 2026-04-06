@@ -27,6 +27,10 @@
 - MOSEI: OGM-GE alone >= boost+OGM-GE; method doesn't demonstrably help there
 - MOSI: 1 seed only — still not addressed as of v3 intro review
 
+## Related Work Review History
+- v1: Score 7.5/10 — Good narrative arc (theory -> throttle paradigm -> coupled monitoring -> decoupled probes). Key strengths: OGM* failure argument, honest competitor differentiation. Key weaknesses: missing Data Remixing/DI-MML/TCMax, PMR inconsistency (P2.3 says "all coupled" but P2.4 says PMR is partially decoupled), AGM/MLGM bidirectional claims not acknowledged, split-batch protocol not in text. See `related-work-review.md` for full review.
+- v2: Score 8.5/10 — All 5 high/medium v1 issues resolved (Du et al. fixed, PMR qualified, AGM/MLGM acknowledged, Data Remixing+DI-MML added, split-batch in text). Remaining: P2.3 enumeration now 11 items (needs grouping), DI-MML "detached" vs "decoupled" distinction needed in P2.4, P2.1 "shared loss derivative" attribution may overclaim prior work support, TCMax still absent. See `related-work-review-v2.md` for full review.
+
 ## Introduction Review History
 - v1: Initial review, identified overclaims, bib errors, em-dash issues
 - v2: Score 6.5/10 — many fixes but KS/MOSI/MOSEI/segmentation issues remained

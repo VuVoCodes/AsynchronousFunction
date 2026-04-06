@@ -28,7 +28,9 @@
 \newcommand{\probeacc}[1]{a^{\text{probe}}_{#1}}
 \newcommand{\boostscale}[1]{\alpha_{#1}}
 
-\title{Probe-Guided Gradient Boosting for Balanced Multimodal Learning}
+% \title{Probe-Guided Gradient Boosting for Balanced Multimodal Learning}
+\title{Boost the Weak, Don't Brake the Strong: Probe-Guided Gradient Balancing for Multimodal Learning}
+
 
 \author{%
   Anonymous Author(s)
@@ -74,7 +76,7 @@ This underperformance stems from a well-documented phenomenon variously termed \
 % Many methods exist, dominated by throttling paradigm.
 % Key limitation: boosting the weak fails with coupled monitoring.
 
-Over thirty methods have been proposed to address modality imbalance since 2020~\citep{peng2022ogmge,li2023agm,wei2024mmpareto,guo2024cggm,wei2024opm,fan2023pmr,kontras2024mlgm,gao2025arm,huang2025inforeg,wei2025arl}, yet the vast majority share a common design bias: they intervene primarily by \emph{throttling} the dominant modality's gradient contribution, leaving direct amplification of the weaker modality largely unexplored. The natural alternative, \emph{boosting} the weaker modality, has been explicitly tested and found to fail: \citet{wei2024opm} report that their boost variant OGM* yields no meaningful improvement over the unmodified baseline. The reason is structural; in late-fusion architectures, every encoder's gradient shares the loss derivative $\partial \loss / \partial f(\mathbf{x}_i)$, which is itself dominated by the strong modality, so amplifying the weak modality's gradient merely scales up a corrupted signal. Recent methods take partial steps toward addressing this limitation~\citep{yang2025iprm,jiang2025aug}, but continue to monitor imbalance through signals coupled to the joint training objective, the very source of the bias.
+Dozen methods have been proposed to address modality imbalance since 2020~\citep{peng2022ogmge,li2023agm,wei2024mmpareto,guo2024cggm,wei2024opm,fan2023pmr,kontras2024mlgm,gao2025arm,huang2025inforeg,wei2025arl}, yet the vast majority share a common design bias: they intervene primarily by \emph{throttling} the dominant modality's gradient contribution, leaving direct amplification of the weaker modality largely unexplored. The natural alternative, \emph{boosting} the weaker modality, has been explicitly tested and found to fail: \citet{wei2024opm} report that their boost variant OGM* yields no meaningful improvement over the unmodified baseline. The reason is structural; in late-fusion architectures, every encoder's gradient shares the loss derivative $\partial \loss / \partial f(\mathbf{x}_i)$, which is itself dominated by the strong modality, so amplifying the weak modality's gradient merely scales up a corrupted signal. Recent methods take partial steps toward addressing this limitation~\citep{yang2025iprm,jiang2025aug}, but continue to monitor imbalance through signals coupled to the joint training objective, the very source of the bias.
 
 % --- P4: Proposed method (high-level, 4 sentences) ---
 % Probe-guided gradient boosting with decoupled monitoring.
@@ -118,7 +120,7 @@ We conduct extensive experiments on six benchmarks spanning audio-visual classif
 % Cite: wang2020gblending, huang2022unimodal, du2023suppression, zhang2024unimodal
 % 4-5 sentences.
 
-% TODO: Write 2.1
+Jointly trained multimodal networks frequently underperform their best unimodal component, a phenomenon first documented empirically by \citet{wang2020gblending}, who observed that na\"ive late-fusion training can degrade rather than improve over single-modality baselines. Subsequent theoretical work has formalized this observation: \citet{huang2022modality} prove under a Gaussian mixture model that joint training learns only a subset of modalities and provide exact calculations for the duration of the resulting unimodal learning phase. \citet{du2023suppression} provide further theoretical analysis of the conditions under which individual modality features fail to be learned in joint multimodal training. More recently, \citet{zhang2024unimodal} characterize this unimodal bias in deep linear networks, showing that the duration and severity of the unimodal phase depend on architecture depth and parameter initialization. These results collectively establish that modality imbalance is not merely an empirical nuisance but a structural property of joint multimodal optimization, one rooted in the shared loss derivative through which all encoder gradients flow.
 
 
 % --- 2.2: Gradient modulation methods (throttle-dominant paradigm) ---
@@ -138,7 +140,7 @@ We conduct extensive experiments on six benchmarks spanning audio-visual classif
 % Cite: chen2018gradnorm, yu2020pcgrad, peng2022ogmge, li2023agm, guo2024cggm, kontras2024mlgm
 % 5-6 sentences.
 
-% TODO: Write 2.2
+The dominant response to modality imbalance has been to modulate gradient magnitudes during backpropagation. Early multi-task methods such as GradNorm~\citep{chen2018gradnorm} and PCGrad~\citep{yu2020pcgrad} normalize or project conflicting gradients across task heads; these were subsequently adapted to the multimodal setting. OGM-GE~\citep{peng2022ogmge} introduced modality-specific gradient scaling based on a discriminative ratio between encoders, combined with Gaussian noise injection to aid the weaker modality's exploration. Follow-up work has refined this template: AGM~\citep{li2023agm} uses Shapley-value attribution, CGGM~\citep{guo2024cggm} adds auxiliary classifiers to modulate both gradient magnitude and direction, and MLGM~\citep{kontras2024mlgm} extends modulation to multi-loss objectives. Although some methods claim bidirectional modulation (e.g., AGM~\citep{li2023agm} and MLGM~\citep{kontras2024mlgm} include acceleration terms), the throttling component empirically dominates, and direct amplification of the weaker modality using only boost signals remains ineffective. Notably, \citet{wei2024opm} explicitly test a boost-only variant (OGM*) and report that it fails to reduce the modality performance gap, an outcome we trace to the fact that coupled monitoring signals are themselves contaminated by the dominant modality (Section~\ref{sec:method}).
 
 
 % --- 2.3: Beyond gradient modulation ---
@@ -160,7 +162,7 @@ We conduct extensive experiments on six benchmarks spanning audio-visual classif
 %       wei2024dr, huang2025inforeg, gao2025arm, yao2022mslr
 % 5-6 sentences.
 
-% TODO: Write 2.3
+A growing body of work addresses modality imbalance through mechanisms beyond gradient scaling. These include feed-forward feature modulation~\citep{wei2024opm} and Pareto-optimal gradient aggregation~\citep{wei2024mmpareto}; modality-alternating strategies such as reconcilement regularization~\citep{hua2024reconboost}, alternating unimodal adaptation~\citep{zhang2024mla}, and detached unimodal pre-training with contrastive knowledge transfer~\citep{fan2024dimml}; diagnostic approaches including representation separability diagnosis~\citep{wei2024dr}, Fisher information regulation~\citep{huang2025inforeg}, and bias-variance decomposition~\citep{wei2025arl}; and interventions on data or learning rates such as modality-specific learning rates~\citep{yao2022mslr}, data decoupling and reassembly~\citep{ma2025remixing}, and total correlation maximization~\citep{yu2026tcmax}. While these methods span diverse intervention points, including losses, architectures, learning rates, and data pipelines, they share a common design choice: imbalance is detected through signals \emph{coupled} to the joint training objective, such as gradient magnitude ratios, per-modality loss contributions, or predictions from the live model (with the partial exception of PMR's decoupled unimodal prototypes~\citep{fan2023pmr}). As established by the theoretical results above, these coupled signals are precisely the quantities distorted by dominant-modality dynamics, which limits the reliability of the imbalance estimate and, consequently, the effectiveness of the corrective intervention.
 
 
 % --- 2.4: Probing and monitoring in multimodal learning ---
@@ -180,13 +182,13 @@ We conduct extensive experiments on six benchmarks spanning audio-visual classif
 % Cite: alain2017understanding, yang2025iprm, jiang2025aug, fan2023pmr, guo2024cggm
 % 5-6 sentences. This is where we set up our method's unique position.
 
-% TODO: Write 2.4
+Linear probes, lightweight classifiers trained on frozen intermediate representations, were introduced by \citet{alain2017understanding} to assess the information content of hidden layers and have since become a standard evaluation tool in representation learning. Several recent multimodal methods incorporate probe-like monitoring, but with important coupling limitations. IPRM~\citep{yang2025iprm} performs a two-pass forward strategy in which the first pass probes modality strength via KL divergence between unimodal and fused predictions; however, these probes operate on live-model outputs and thus remain coupled to the joint objective. Similarly, CGGM's auxiliary classifiers participate directly in the training loss~\citep{guo2024cggm}, and AUG~\citep{jiang2025aug} detects modality weakness through loss-based signals that inherit the dominant modality's bias. PMR~\citep{fan2023pmr} takes a step toward decoupled evaluation by using prototypes for unimodal assessment, though it intervenes at the loss level rather than directly on encoder gradients. DI-MML~\citep{fan2024dimml} likewise ``detaches'' unimodal pre-training from joint training, but its monitoring signal is still derived from the joint objective during the interactive phase. In contrast, our method trains \emph{fully decoupled} linear probes on detached encoder features with separate optimizers and evaluates them on held-out within-batch samples to prevent probe overfitting. The resulting probe-detected utilization gap directly boosts the weaker modality's encoder gradients, ensuring that the imbalance estimate is not contaminated by the very dynamics it aims to correct.
 
 
 %=============================================================================
 % SECTION 3: METHOD
 %=============================================================================
-\section{Method}
+\section{Probe-Guided Gradient Boosting}
 \label{sec:method}
 
 % TODO: Write method
