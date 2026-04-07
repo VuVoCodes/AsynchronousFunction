@@ -35,4 +35,18 @@
 ## Structural Decisions
 - Introduction follows CGGM template: 5 paragraphs + 3 contributions (~1.5 pages)
 - Paper sections: intro, related work, method, experiments, discussion, conclusion
-- Section labels: sec:intro, sec:related, sec:experiments
+- Section labels: sec:intro, sec:related, sec:method, sec:experiments, sec:conclusion
+- Method subsection labels: sec:problem, sec:probes, sec:boost, sec:compose, sec:algorithm
+- Method has 12 numbered equations: eq:encoder through eq:total_loss
+- Algorithm 1 label: alg:pgb
+- Figure 1 label: fig:architecture (TikZ diagram of full pipeline)
+- TikZ packages loaded: tikz with arrows.meta, positioning, calc, fit, backgrounds, decorations.pathreplacing
+
+## Method Section Notation
+- $M$ modalities, encoder $\encoder_m$ with params $\theta_m$
+- Features $\mathbf{z}_m \in \mathbb{R}^d$, fusion classifier $g$ with params $\phi$
+- Probe $\probe_m$ with params $\psi_m$, probe accuracy $P_m$, EMA $\bar{P}_m$
+- Utilization gap $\delta$, weakness score $w_m$, boost scale $s_m$, EMA $\bar{s}_m$
+- EMA coefficients: $\beta=0.1$ (probe), $\mu=0.3$ (scale)
+- Boost strength $\alpha=0.5$, cap $s_{\max}=2.0$, probe interval $K=20$
+- OGM-GE throttle factor $\omega_m^{\text{ogm}}$, unimodal weight $\gamma=1.0$
