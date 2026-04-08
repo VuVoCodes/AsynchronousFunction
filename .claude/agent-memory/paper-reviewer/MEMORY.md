@@ -39,3 +39,7 @@
 - v2: Score 6.5/10 — many fixes but KS/MOSI/MOSEI/segmentation issues remained
 - v3: Score 7.5/10 — most bib/formatting issues fixed, remaining: KS significance, MOSI seeds, segmentation claim, MOSEI framing
 - v4: Score 8.0/10 — restructured to 5 paragraphs + 3 contributions (CGGM template). Segmentation removed from contributions. Main result paragraph added. Key remaining issue: P5 "consistent improvements across all six datasets" is an overclaim (MOSEI/MOSI: method <= OGM-GE alone; KS not significant). CGGM comparison needs architecture qualifier.
+
+## Audit History
+- [Model trace audit 2026-04-08](audit_trace_2026-04-08.md) — All 175+ checkpoints verified, all numbers match, MOSEI +2.01 text ambiguity
+- [Std deviation inconsistency](std_inconsistency.md) — Pop vs sample std used inconsistently across datasets

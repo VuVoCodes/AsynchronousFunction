@@ -33,6 +33,7 @@ Usage:
 """
 
 import argparse
+import math
 import sys
 import yaml
 import random
@@ -1254,6 +1255,523 @@ def apply_ogm_ge(
     return coeffs, scores
 
 
+# =============================================================================
+# MMPareto (Wei & Hu, ICML 2024)
+# Pareto-optimal gradient weighting for multimodal + unimodal objectives
+# Ported from: https://github.com/GeWu-Lab/MMPareto_ICML2024
+# =============================================================================
+
+class MinNormSolver:
+    """Find minimum norm element in convex hull of gradient vectors."""
+    MAX_ITER = 250
+    STOP_CRIT = 1e-5
+
+    @staticmethod
+    def _min_norm_element_from2(v1v1, v1v2, v2v2):
+        if v1v2 >= v1v1:
+            return 0.999, v1v1
+        if v1v2 >= v2v2:
+            return 0.001, v2v2
+        gamma = -1.0 * ((v1v2 - v2v2) / (v1v1 + v2v2 - 2 * v1v2))
+        cost = v2v2 + gamma * (v1v2 - v2v2)
+        return gamma, cost
+
+    @staticmethod
+    def _min_norm_2d(vecs, dps):
+        dmin = 1e8
+        sol = None
+        for i in range(len(vecs)):
+            for j in range(i + 1, len(vecs)):
+                if (i, j) not in dps:
+                    dps[(i, j)] = sum(
+                        torch.mul(vecs[i][k], vecs[j][k]).sum().data.cpu()
+                        for k in range(len(vecs[i]))
+                    )
+                    dps[(j, i)] = dps[(i, j)]
+                if (i, i) not in dps:
+                    dps[(i, i)] = sum(
+                        torch.mul(vecs[i][k], vecs[i][k]).sum().data.cpu()
+                        for k in range(len(vecs[i]))
+                    )
+                if (j, j) not in dps:
+                    dps[(j, j)] = sum(
+                        torch.mul(vecs[j][k], vecs[j][k]).sum().data.cpu()
+                        for k in range(len(vecs[i]))
+                    )
+                c, d = MinNormSolver._min_norm_element_from2(
+                    dps[(i, i)], dps[(i, j)], dps[(j, j)]
+                )
+                if d < dmin:
+                    dmin = d
+                    sol = [(i, j), c, d]
+        return sol, dps
+
+    @staticmethod
+    def _projection2simplex(y):
+        m = len(y)
+        sorted_y = np.flip(np.sort(y), axis=0)
+        tmpsum = 0.0
+        tmax_f = (np.sum(y) - 1.0) / m
+        for i in range(m - 1):
+            tmpsum += sorted_y[i]
+            tmax = (tmpsum - 1) / (i + 1.0)
+            if tmax > sorted_y[i + 1]:
+                tmax_f = tmax
+                break
+        return np.maximum(y - tmax_f, np.zeros(y.shape))
+
+    @staticmethod
+    def _next_point(cur_val, grad, n):
+        proj_grad = grad - (np.sum(grad) / n)
+        tm1 = -1.0 * cur_val[proj_grad < 0] / proj_grad[proj_grad < 0]
+        tm2 = (1.0 - cur_val[proj_grad > 0]) / (proj_grad[proj_grad > 0])
+        t = 1
+        if len(tm1[tm1 > 1e-7]) > 0:
+            t = np.min(tm1[tm1 > 1e-7])
+        if len(tm2[tm2 > 1e-7]) > 0:
+            t = min(t, np.min(tm2[tm2 > 1e-7]))
+        next_point = proj_grad * t + cur_val
+        next_point = MinNormSolver._projection2simplex(next_point)
+        return next_point
+
+    @staticmethod
+    def find_min_norm_element(vecs):
+        dps = {}
+        init_sol, dps = MinNormSolver._min_norm_2d(vecs, dps)
+        new_dps = {}
+        new_init_sol = []
+        for item in dps:
+            new_dps[item] = dps[item].numpy() if torch.is_tensor(dps[item]) else dps[item]
+        for item in init_sol:
+            data = item.numpy() if torch.is_tensor(item) else item
+            new_init_sol.append(data)
+        dps = new_dps
+        init_sol = new_init_sol
+
+        n = len(vecs)
+        sol_vec = np.zeros(n)
+        sol_vec[init_sol[0][0]] = init_sol[1]
+        sol_vec[init_sol[0][1]] = 1 - init_sol[1]
+
+        if n < 3:
+            return sol_vec, init_sol[2]
+
+        iter_count = 0
+        grad_mat = np.zeros((n, n))
+        for i in range(n):
+            for j in range(n):
+                grad_mat[i, j] = dps[(i, j)]
+
+        while iter_count < MinNormSolver.MAX_ITER:
+            grad_dir = -1.0 * np.dot(grad_mat, sol_vec)
+            new_point = MinNormSolver._next_point(sol_vec, grad_dir, n)
+            v1v1, v1v2, v2v2 = 0.0, 0.0, 0.0
+            for i in range(n):
+                for j in range(n):
+                    v1v1 += sol_vec[i] * sol_vec[j] * dps[(i, j)]
+                    v1v2 += sol_vec[i] * new_point[j] * dps[(i, j)]
+                    v2v2 += new_point[i] * new_point[j] * dps[(i, j)]
+            nc, nd = MinNormSolver._min_norm_element_from2(v1v1, v1v2, v2v2)
+            new_sol_vec = nc * sol_vec + (1 - nc) * new_point
+            change = new_sol_vec - sol_vec
+            if np.sum(np.abs(change)) < MinNormSolver.STOP_CRIT:
+                return sol_vec, nd
+            sol_vec = new_sol_vec
+            iter_count += 1
+        return sol_vec, nd
+
+
+def train_epoch_mmpareto(
+    model: nn.Module,
+    dataloader: DataLoader,
+    optimizer: optim.Optimizer,
+    device: torch.device,
+    epoch: int,
+    config: dict,
+    logger,
+    writer: SummaryWriter = None,
+    gamma: float = 1.5,
+):
+    """Train one epoch with MMPareto (Wei & Hu, ICML 2024).
+
+    For each batch:
+    1. Compute multimodal loss + per-modality unimodal losses
+    2. Compute per-modality gradients for each loss separately
+    3. Check gradient alignment (cosine similarity)
+    4. If conflict: solve Pareto-optimal weights via MinNormSolver
+    5. Apply weighted gradients with magnitude preservation
+    """
+    model.train()
+    criterion = nn.CrossEntropyLoss()
+    loss_meter = AverageMeter("Loss")
+    metric_tracker = MetricTracker(config["evaluation"]["metrics"])
+    modalities = config["dataset"]["modalities"]
+
+    # Identify per-modality parameters (exclude fusion head)
+    modality_params = {m: [] for m in modalities}
+    for name, param in model.named_parameters():
+        for m in modalities:
+            if f"encoders.{m}" in name or f"unimodal_classifiers.{m}" in name:
+                modality_params[m].append((name, param))
+
+    pbar = tqdm(dataloader, desc=f"Epoch {epoch}")
+
+    for batch_idx, batch in enumerate(pbar):
+        global_step = (epoch - 1) * len(dataloader) + batch_idx
+        inputs = {m: batch[m].to(device, non_blocking=True) for m in modalities}
+        targets = batch["label"].to(device, non_blocking=True)
+
+        optimizer.zero_grad()
+        logits, unimodal_logits, features = model(inputs, return_features=True)
+
+        # Compute losses
+        loss_mm = criterion(logits, targets)
+        unimodal_losses = {m: criterion(unimodal_logits[m], targets) for m in modalities}
+
+        # Collect gradients per loss per modality
+        all_losses = [loss_mm] + [unimodal_losses[m] for m in modalities]
+        loss_labels = ["both"] + list(modalities)
+
+        grads_per_modality = {m: {} for m in modalities}
+
+        for idx, loss_label in enumerate(loss_labels):
+            all_losses[idx].backward(retain_graph=True)
+            for m in modalities:
+                if loss_label == "both" or loss_label == m:
+                    grads_per_modality[m][loss_label] = {}
+                    for pname, param in modality_params[m]:
+                        if param.grad is not None:
+                            grads_per_modality[m][loss_label][pname] = param.grad.data.clone()
+            optimizer.zero_grad()
+
+        # Compute Pareto weights per modality
+        pareto_weights = {}
+        for m in modalities:
+            if "both" not in grads_per_modality[m] or m not in grads_per_modality[m]:
+                pareto_weights[m] = [0.5, 0.5]
+                continue
+
+            # Find parameters with gradients in BOTH loss types
+            common_params = [
+                pn for pn, _ in modality_params[m]
+                if pn in grads_per_modality[m]["both"] and pn in grads_per_modality[m][m]
+            ]
+            if not common_params:
+                pareto_weights[m] = [0.5, 0.5]
+                continue
+
+            # Concatenate gradients for cosine similarity
+            grads_both = torch.cat([
+                grads_per_modality[m]["both"][pn].flatten() for pn in common_params
+            ])
+            grads_uni = torch.cat([
+                grads_per_modality[m][m][pn].flatten() for pn in common_params
+            ])
+
+            cos_sim = nn.functional.cosine_similarity(grads_both, grads_uni, dim=0)
+
+            if cos_sim > 0:
+                pareto_weights[m] = [0.5, 0.5]
+            else:
+                # Build gradient vectors for MinNormSolver
+                grad_vecs = [
+                    [grads_per_modality[m]["both"][pn] for pn in common_params],
+                    [grads_per_modality[m][m][pn] for pn in common_params],
+                ]
+                sol, _ = MinNormSolver.find_min_norm_element(grad_vecs)
+                pareto_weights[m] = sol.tolist()
+
+        # Compute combined loss and backward for fusion head gradients
+        total_loss = loss_mm + sum(unimodal_losses[m] for m in modalities)
+        total_loss.backward()
+
+        # Override encoder gradients with Pareto-weighted gradients
+        for m in modalities:
+            w_both, w_uni = pareto_weights[m]
+            for pname, param in modality_params[m]:
+                if param.grad is not None and pname in grads_per_modality[m].get("both", {}) and pname in grads_per_modality[m].get(m, {}):
+                    three_norm = torch.norm(param.grad.data)
+                    new_grad = 2 * w_both * grads_per_modality[m]["both"][pname] + \
+                               2 * w_uni * grads_per_modality[m][m][pname]
+                    new_norm = torch.norm(new_grad)
+                    if new_norm > 0:
+                        diff = three_norm / new_norm
+                        if diff > 1:
+                            param.grad = diff * new_grad * gamma
+                        else:
+                            param.grad = new_grad * gamma
+
+        optimizer.step()
+
+        loss_meter.update(total_loss.item())
+        with torch.no_grad():
+            preds = logits.argmax(dim=-1)
+            metric_tracker.update(preds, targets)
+
+        pbar.set_postfix(loss=f"{loss_meter.avg:.4f}")
+
+        if writer and batch_idx % config["logging"].get("log_interval", 20) == 0:
+            writer.add_scalar("train/loss", total_loss.item(), global_step)
+            writer.add_scalar("train/loss_mm", loss_mm.item(), global_step)
+            for m in modalities:
+                w = pareto_weights.get(m, [0.5, 0.5])
+                writer.add_scalar(f"mmpareto/w_both_{m}", w[0], global_step)
+                writer.add_scalar(f"mmpareto/w_uni_{m}", w[1], global_step)
+
+    return loss_meter.avg, metric_tracker.compute()
+
+
+# =============================================================================
+# AGM (Li et al., 2023)
+# Adaptive Gradient Modulation via loss-based exponential scaling
+# Ported from: https://github.com/lihongcs/AGM
+# =============================================================================
+
+def train_epoch_agm(
+    model: nn.Module,
+    dataloader: DataLoader,
+    optimizer: optim.Optimizer,
+    device: torch.device,
+    epoch: int,
+    config: dict,
+    logger,
+    writer: SummaryWriter = None,
+    alpha: float = 1.0,
+    modulation_start: int = 0,
+    modulation_end: int = 50,
+    running_scores: dict = None,
+):
+    """Train one epoch with AGM (Li et al., 2023).
+
+    For each batch:
+    1. Compute per-modality cross-entropy loss scores
+    2. Compute current batch ratios: exp(mean_score - score_m)
+    3. Compute optimal ratios from running average scores
+    4. Coefficient = exp(alpha * (optimal_ratio - current_ratio))
+    5. Apply coefficients to encoder gradients via backward hooks
+    """
+    model.train()
+    criterion = nn.CrossEntropyLoss()
+    softmax = nn.Softmax(dim=1)
+    loss_meter = AverageMeter("Loss")
+    metric_tracker = MetricTracker(config["evaluation"]["metrics"])
+    modalities = config["dataset"]["modalities"]
+    m_list = list(modalities)
+
+    # Initialize running scores if not provided
+    if running_scores is None:
+        running_scores = {m: 0.0 for m in modalities}
+
+    total_batch = len(dataloader)
+    pbar = tqdm(dataloader, desc=f"Epoch {epoch}")
+
+    for batch_idx, batch in enumerate(pbar):
+        global_step = (epoch - 1) * total_batch + batch_idx
+        iteration = global_step + 1  # 1-indexed for running average
+
+        inputs = {m: batch[m].to(device, non_blocking=True) for m in modalities}
+        targets = batch["label"].to(device, non_blocking=True)
+
+        optimizer.zero_grad()
+        logits, unimodal_logits, features = model(inputs, return_features=True)
+
+        loss = criterion(logits, targets)
+
+        # Compute per-modality cross-entropy scores (average per-sample log-loss)
+        batch_scores = {}
+        for m in m_list:
+            probs = softmax(unimodal_logits[m])
+            score = 0.0
+            for k in range(probs.size(0)):
+                p = probs[k][targets[k]]
+                if p < 1e-8 or torch.isinf(torch.log(p)):
+                    score += -torch.log(torch.tensor(1e-8, dtype=probs.dtype, device=device)).item()
+                else:
+                    score += -torch.log(p).item()
+            batch_scores[m] = score / probs.size(0)
+
+        # Compute coefficients
+        coeffs = {m: 1.0 for m in m_list}
+        if modulation_start <= epoch <= modulation_end:
+            n_mod = len(m_list)
+            mean_score = sum(batch_scores[m] for m in m_list) / n_mod
+            mean_running = sum(running_scores[m] for m in m_list) / n_mod
+
+            for m in m_list:
+                # Current batch ratio
+                ratio_m = math.exp(mean_score - batch_scores[m])
+                # Optimal ratio from running average
+                optimal_ratio_m = math.exp(mean_running - running_scores[m])
+                # AGM coefficient
+                coeffs[m] = math.exp(alpha * min(optimal_ratio_m - ratio_m, 10))
+
+        # Update running average scores
+        for m in m_list:
+            running_scores[m] = running_scores[m] * (iteration - 1) / iteration + batch_scores[m] / iteration
+
+        # Backward with gradient scaling
+        loss.backward()
+
+        if modulation_start <= epoch <= modulation_end:
+            for name, param in model.named_parameters():
+                if param.grad is not None:
+                    for m in m_list:
+                        if f"encoders.{m}" in name:
+                            param.grad.data = param.grad.data * coeffs[m]
+
+        optimizer.step()
+
+        loss_meter.update(loss.item())
+        with torch.no_grad():
+            preds = logits.argmax(dim=-1)
+            metric_tracker.update(preds, targets)
+
+        pbar.set_postfix(loss=f"{loss_meter.avg:.4f}")
+
+        if writer and batch_idx % config["logging"].get("log_interval", 20) == 0:
+            writer.add_scalar("train/loss", loss.item(), global_step)
+            for m in m_list:
+                writer.add_scalar(f"agm/coeff_{m}", coeffs[m], global_step)
+                writer.add_scalar(f"agm/score_{m}", batch_scores[m], global_step)
+
+    return loss_meter.avg, metric_tracker.compute(), running_scores
+
+
+# =============================================================================
+# Grad-Blending / G-Blend (Wang et al., CVPR 2020)
+# Overfitting-to-generalization ratio weighting
+# Implemented from paper description (no official repo available)
+# =============================================================================
+
+def train_epoch_gblend(
+    model: nn.Module,
+    dataloader: DataLoader,
+    optimizer: optim.Optimizer,
+    device: torch.device,
+    epoch: int,
+    config: dict,
+    logger,
+    writer: SummaryWriter = None,
+    blend_weights: dict = None,
+):
+    """Train one epoch with Grad-Blending / G-Blend (Wang et al., CVPR 2020).
+
+    G-Blend computes per-modality overfitting-to-generalization (OG) ratios
+    and uses them to weight the loss contributions. The blend weights are
+    computed at the END of each epoch and applied during the NEXT epoch.
+
+    OG ratio for modality m:
+        OG_m = (train_loss_m - val_loss_m) / val_loss_m
+    Higher OG means more overfitting → lower weight.
+
+    Weight for modality m:
+        w_m = (1 / OG_m) / sum(1 / OG_j for all j)
+    """
+    model.train()
+    criterion = nn.CrossEntropyLoss()
+    loss_meter = AverageMeter("Loss")
+    metric_tracker = MetricTracker(config["evaluation"]["metrics"])
+    modalities = config["dataset"]["modalities"]
+    m_list = list(modalities)
+
+    # Default to uniform weights if not provided
+    if blend_weights is None:
+        n = len(m_list)
+        blend_weights = {m: 1.0 / n for m in m_list}
+
+    # Track per-modality train losses for OG ratio computation
+    train_loss_trackers = {m: AverageMeter(f"train_loss_{m}") for m in m_list}
+
+    pbar = tqdm(dataloader, desc=f"Epoch {epoch}")
+
+    for batch_idx, batch in enumerate(pbar):
+        global_step = (epoch - 1) * len(dataloader) + batch_idx
+        inputs = {m: batch[m].to(device, non_blocking=True) for m in modalities}
+        targets = batch["label"].to(device, non_blocking=True)
+
+        optimizer.zero_grad()
+        logits, unimodal_logits, features = model(inputs, return_features=True)
+
+        # Weighted loss: fusion loss + weighted sum of unimodal losses
+        fusion_loss = criterion(logits, targets)
+        unimodal_losses = {}
+        for m in m_list:
+            unimodal_losses[m] = criterion(unimodal_logits[m], targets)
+            train_loss_trackers[m].update(unimodal_losses[m].item())
+
+        # Total loss = fusion + blend-weighted unimodal
+        weighted_uni_loss = sum(blend_weights[m] * unimodal_losses[m] for m in m_list)
+        total_loss = fusion_loss + weighted_uni_loss
+
+        total_loss.backward()
+        optimizer.step()
+
+        loss_meter.update(total_loss.item())
+        with torch.no_grad():
+            preds = logits.argmax(dim=-1)
+            metric_tracker.update(preds, targets)
+
+        pbar.set_postfix(loss=f"{loss_meter.avg:.4f}")
+
+        if writer and batch_idx % config["logging"].get("log_interval", 20) == 0:
+            writer.add_scalar("train/loss", total_loss.item(), global_step)
+            for m in m_list:
+                writer.add_scalar(f"gblend/weight_{m}", blend_weights[m], global_step)
+                writer.add_scalar(f"gblend/train_loss_{m}", train_loss_trackers[m].avg, global_step)
+
+    train_losses = {m: train_loss_trackers[m].avg for m in m_list}
+    return loss_meter.avg, metric_tracker.compute(), train_losses
+
+
+def compute_gblend_weights(
+    model: nn.Module,
+    train_losses: dict,
+    val_loader: DataLoader,
+    device: torch.device,
+    modalities: list,
+    logger,
+) -> dict:
+    """Compute G-Blend weights from overfitting-to-generalization ratios.
+
+    Called at the end of each epoch to compute weights for the next epoch.
+    """
+    model.eval()
+    criterion = nn.CrossEntropyLoss()
+    m_list = list(modalities)
+    val_loss_trackers = {m: AverageMeter(f"val_loss_{m}") for m in m_list}
+
+    with torch.no_grad():
+        for batch in val_loader:
+            inputs = {m: batch[m].to(device) for m in modalities}
+            targets = batch["label"].to(device)
+            _, unimodal_logits, _ = model(inputs, return_features=True)
+            for m in m_list:
+                val_loss = criterion(unimodal_logits[m], targets)
+                val_loss_trackers[m].update(val_loss.item())
+
+    # Compute OG ratios and weights
+    og_ratios = {}
+    for m in m_list:
+        val_loss = val_loss_trackers[m].avg
+        train_loss = train_losses[m]
+        if val_loss > 1e-8:
+            og_ratios[m] = max((train_loss - val_loss) / val_loss, 1e-4)
+        else:
+            og_ratios[m] = 1e-4
+
+    # Inverse OG ratio as weight
+    inv_og = {m: 1.0 / og_ratios[m] for m in m_list}
+    total = sum(inv_og.values())
+    weights = {m: inv_og[m] / total for m in m_list}
+
+    logger.info(
+        f"G-Blend OG ratios: {', '.join(f'{m}={og_ratios[m]:.4f}' for m in m_list)} → "
+        f"weights: {', '.join(f'{m}={weights[m]:.4f}' for m in m_list)}"
+    )
+
+    return weights
+
+
 def train_epoch_cggm(
     model: nn.Module,
     dataloader: DataLoader,
@@ -1797,7 +2315,7 @@ def main():
         "--mode",
         type=str,
         default="baseline",
-        choices=["baseline", "frequency", "staleness", "adaptive", "miles", "inforeg", "arl", "opm", "cggm"],
+        choices=["baseline", "frequency", "staleness", "adaptive", "miles", "inforeg", "arl", "opm", "cggm", "mmpareto", "agm", "gblend"],
         help="Training mode",
     )
     parser.add_argument("--fixed-ratio", type=int, default=2, help="Fixed frequency ratio (for frequency mode)")
@@ -1835,6 +2353,16 @@ def main():
                         help="CGGM: λ weight for gradient direction loss L_gm (default: 0.2)")
     parser.add_argument("--cggm-cls-lr", type=float, default=5e-4,
                         help="CGGM: classifier learning rate (default: 5e-4)")
+    # AGM-specific arguments (Li et al., 2023)
+    parser.add_argument("--agm-alpha", type=float, default=1.0,
+                        help="AGM: α degree of gradient modulation (default: 1.0)")
+    parser.add_argument("--agm-modulation-start", type=int, default=0,
+                        help="AGM: epoch to start modulation (default: 0)")
+    parser.add_argument("--agm-modulation-end", type=int, default=50,
+                        help="AGM: epoch to stop modulation (default: 50)")
+    # MMPareto-specific arguments (Wei & Hu, ICML 2024)
+    parser.add_argument("--mmpareto-gamma", type=float, default=1.5,
+                        help="MMPareto: γ gradient magnitude scaling (default: 1.5)")
     # Dataset overrides
     parser.add_argument("--fps", type=int, default=None,
                         help="Override dataset fps (frames per second extraction rate)")
@@ -1906,7 +2434,7 @@ def main():
         config["dataset"]["num_frames"] = args.num_frames
 
     # Configure ASGML based on mode
-    if args.mode in ("baseline", "miles", "inforeg", "arl", "opm"):
+    if args.mode in ("baseline", "miles", "inforeg", "arl", "opm", "mmpareto", "agm", "gblend"):
         config["asgml"]["enabled"] = False
     else:
         config["asgml"]["enabled"] = True
@@ -1979,6 +2507,10 @@ def main():
         "opm_lam": args.opm_lam,
         "opm_p_exe": args.opm_p_exe,
         "opm_warmup": args.opm_warmup,
+        "agm_alpha": args.agm_alpha,
+        "agm_modulation_start": args.agm_modulation_start,
+        "agm_modulation_end": args.agm_modulation_end,
+        "mmpareto_gamma": args.mmpareto_gamma,
     }
     with open(output_dir / "config.yaml", "w") as f:
         yaml.dump(config_copy, f)
@@ -2597,6 +3129,214 @@ def main():
         logger.info(f"Training complete. Best accuracy: {best_acc:.4f}")
         writer.close()
         return  # Exit early for OPM mode
+
+    # ========== MMPareto Mode (Wei & Hu, ICML 2024) ==========
+    if args.mode == "mmpareto":
+        logger.info(f"MMPareto mode: γ={args.mmpareto_gamma}")
+
+        optimizer = torch.optim.SGD(
+            model.parameters(),
+            lr=config["training"]["lr"],
+            momentum=config["training"].get("momentum", 0.9),
+            weight_decay=config["training"].get("weight_decay", 1e-4),
+        )
+        lr_scheduler = get_scheduler(optimizer, config)
+
+        start_epoch = 1
+        best_acc = 0.0
+
+        for epoch in range(start_epoch, config["training"]["epochs"] + 1):
+            train_loss, train_metrics_dict = train_epoch_mmpareto(
+                model, train_loader, optimizer, device, epoch, config, logger,
+                writer=writer,
+                gamma=args.mmpareto_gamma,
+            )
+
+            if lr_scheduler is not None:
+                lr_scheduler.step()
+
+            test_metrics = evaluate_miles(model, test_loader, device, config)
+
+            log_str = (
+                f"Epoch {epoch}: "
+                f"Train Loss={train_loss:.4f}, "
+                f"Train Acc={train_metrics_dict.get('accuracy', 0):.4f}, "
+                f"Test Acc={test_metrics['accuracy']:.4f}, "
+                f"Test F1={test_metrics['f1_macro']:.4f}"
+            )
+            logger.info(log_str)
+
+            writer.add_scalar("test/accuracy", test_metrics["accuracy"], epoch)
+            writer.add_scalar("test/f1_macro", test_metrics["f1_macro"], epoch)
+            writer.add_scalar("test/loss", test_metrics["loss"], epoch)
+
+            if test_metrics["accuracy"] > best_acc:
+                best_acc = test_metrics["accuracy"]
+                best_checkpoint = {
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "best_acc": best_acc,
+                    "config": config_copy,
+                }
+                torch.save(best_checkpoint, output_dir / "best_model.pt")
+                logger.info(f"New best model saved with accuracy: {best_acc:.4f}")
+
+            if epoch % config["logging"]["save_interval"] == 0:
+                torch.save({
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "best_acc": best_acc,
+                    "config": config_copy,
+                }, output_dir / f"checkpoint_epoch{epoch}.pt")
+
+        logger.info(f"Training complete. Best accuracy: {best_acc:.4f}")
+        writer.close()
+        return  # Exit early for MMPareto mode
+
+    # ========== AGM Mode (Li et al., 2023) ==========
+    if args.mode == "agm":
+        logger.info(
+            f"AGM mode: α={args.agm_alpha}, "
+            f"modulation=[{args.agm_modulation_start}, {args.agm_modulation_end}]"
+        )
+
+        optimizer = torch.optim.SGD(
+            model.parameters(),
+            lr=config["training"]["lr"],
+            momentum=config["training"].get("momentum", 0.9),
+            weight_decay=config["training"].get("weight_decay", 1e-4),
+        )
+        lr_scheduler = get_scheduler(optimizer, config)
+
+        start_epoch = 1
+        best_acc = 0.0
+        running_scores = {m: 0.0 for m in modalities}
+
+        for epoch in range(start_epoch, config["training"]["epochs"] + 1):
+            train_loss, train_metrics_dict, running_scores = train_epoch_agm(
+                model, train_loader, optimizer, device, epoch, config, logger,
+                writer=writer,
+                alpha=args.agm_alpha,
+                modulation_start=args.agm_modulation_start,
+                modulation_end=args.agm_modulation_end,
+                running_scores=running_scores,
+            )
+
+            if lr_scheduler is not None:
+                lr_scheduler.step()
+
+            test_metrics = evaluate_miles(model, test_loader, device, config)
+
+            log_str = (
+                f"Epoch {epoch}: "
+                f"Train Loss={train_loss:.4f}, "
+                f"Train Acc={train_metrics_dict.get('accuracy', 0):.4f}, "
+                f"Test Acc={test_metrics['accuracy']:.4f}, "
+                f"Test F1={test_metrics['f1_macro']:.4f}"
+            )
+            logger.info(log_str)
+
+            writer.add_scalar("test/accuracy", test_metrics["accuracy"], epoch)
+            writer.add_scalar("test/f1_macro", test_metrics["f1_macro"], epoch)
+            writer.add_scalar("test/loss", test_metrics["loss"], epoch)
+
+            if test_metrics["accuracy"] > best_acc:
+                best_acc = test_metrics["accuracy"]
+                best_checkpoint = {
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "best_acc": best_acc,
+                    "config": config_copy,
+                }
+                torch.save(best_checkpoint, output_dir / "best_model.pt")
+                logger.info(f"New best model saved with accuracy: {best_acc:.4f}")
+
+            if epoch % config["logging"]["save_interval"] == 0:
+                torch.save({
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "best_acc": best_acc,
+                    "config": config_copy,
+                }, output_dir / f"checkpoint_epoch{epoch}.pt")
+
+        logger.info(f"Training complete. Best accuracy: {best_acc:.4f}")
+        writer.close()
+        return  # Exit early for AGM mode
+
+    # ========== G-Blend Mode (Wang et al., CVPR 2020) ==========
+    if args.mode == "gblend":
+        logger.info("G-Blend mode: overfitting-to-generalization ratio weighting")
+
+        optimizer = torch.optim.SGD(
+            model.parameters(),
+            lr=config["training"]["lr"],
+            momentum=config["training"].get("momentum", 0.9),
+            weight_decay=config["training"].get("weight_decay", 1e-4),
+        )
+        lr_scheduler = get_scheduler(optimizer, config)
+
+        start_epoch = 1
+        best_acc = 0.0
+        blend_weights = None  # Start with uniform weights
+
+        for epoch in range(start_epoch, config["training"]["epochs"] + 1):
+            train_loss, train_metrics_dict, train_losses = train_epoch_gblend(
+                model, train_loader, optimizer, device, epoch, config, logger,
+                writer=writer,
+                blend_weights=blend_weights,
+            )
+
+            if lr_scheduler is not None:
+                lr_scheduler.step()
+
+            test_metrics = evaluate_miles(model, test_loader, device, config)
+
+            # Compute blend weights for next epoch from OG ratios
+            blend_weights = compute_gblend_weights(
+                model, train_losses, test_loader, device, modalities, logger,
+            )
+
+            log_str = (
+                f"Epoch {epoch}: "
+                f"Train Loss={train_loss:.4f}, "
+                f"Train Acc={train_metrics_dict.get('accuracy', 0):.4f}, "
+                f"Test Acc={test_metrics['accuracy']:.4f}, "
+                f"Test F1={test_metrics['f1_macro']:.4f}"
+            )
+            logger.info(log_str)
+
+            writer.add_scalar("test/accuracy", test_metrics["accuracy"], epoch)
+            writer.add_scalar("test/f1_macro", test_metrics["f1_macro"], epoch)
+            writer.add_scalar("test/loss", test_metrics["loss"], epoch)
+
+            if test_metrics["accuracy"] > best_acc:
+                best_acc = test_metrics["accuracy"]
+                best_checkpoint = {
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "best_acc": best_acc,
+                    "config": config_copy,
+                }
+                torch.save(best_checkpoint, output_dir / "best_model.pt")
+                logger.info(f"New best model saved with accuracy: {best_acc:.4f}")
+
+            if epoch % config["logging"]["save_interval"] == 0:
+                torch.save({
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "best_acc": best_acc,
+                    "config": config_copy,
+                }, output_dir / f"checkpoint_epoch{epoch}.pt")
+
+        logger.info(f"Training complete. Best accuracy: {best_acc:.4f}")
+        writer.close()
+        return  # Exit early for G-Blend mode
 
     # ========== Standard ASGML Modes ==========
     # Create optimizer and scheduler
