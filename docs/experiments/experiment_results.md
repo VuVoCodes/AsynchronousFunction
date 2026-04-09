@@ -1114,3 +1114,80 @@ Our baseline (85.77%) already exceeds CGGM's reported CGGM result (73.94%) by 12
 ---
 
 *Last updated: 2026-04-03 (BraTS multi-seed complete — ASGML 85.98 ± 1.15% beats baseline 85.77 ± 0.62% and CGGM 81.13 ± 1.34%. All 6 datasets fully validated with 5 seeds each.)*
+
+---
+
+## Additional Baselines: MMPareto, AGM, Grad-Blending
+
+**Date:** 2026-04-08
+**Motivation:** Reviewer-requested baselines. MMPareto (ICML 2024), AGM (Li et al. 2023), and Grad-Blending (Wang et al. CVPR 2020) are frequently cited in modality imbalance comparisons.
+**Implementation:** Ported from official repos (MMPareto: GeWu-Lab/MMPareto_ICML2024, AGM: lihongcs/AGM). G-Blend implemented from paper (no official repo).
+**Setup:** Same controlled conditions as all other methods — ResNet18 from scratch, 3 frames @ 3 FPS, SGD lr=0.001, StepLR step=70, batch 64, 100 epochs.
+
+### MMPareto Results (seed=42)
+
+| Method | Best Acc | Notes |
+|--------|----------|-------|
+| **MMPareto** | **67.07%** | Pareto-optimal gradient weighting (γ=1.5) |
+
+**Training details:** ~36 sec/epoch (slower than OGM-GE due to 3 separate backward passes per batch). Best accuracy at epoch ~72 (post-LR step). Train accuracy reaches 99.97% — same overfitting pattern as other methods.
+
+### Ranking with MMPareto (single seed=42, CREMA-D 3f)
+
+| Rank | Method | Best Acc (seed=42) |
+|------|--------|--------------------|
+| 1 | **Boost+OGM-GE (α=0.75)** | **71.37%** |
+| 2 | OGM-GE | 67.88% |
+| 3 | InfoReg (100ep) | 67.07% |
+| 4 | **MMPareto** | **67.07%** |
+| 5 | MILES (τ=0.2) | 64.52% |
+| 6 | Baseline | 60.48% |
+| 7 | Boost only | 60.35% |
+
+**Observation:** MMPareto ties with InfoReg at 67.07% on seed=42. Both trail OGM-GE (67.88%) by ~0.8pp. Boost+OGM-GE leads by +3.49pp over MMPareto.
+
+### AGM Results (seed=42)
+
+| Method | Best Acc | Notes |
+|--------|----------|-------|
+| **AGM (α=1.0)** | **56.85%** | Loss-based exponential gradient scaling, modulation epochs 0-50 |
+
+**Observation:** AGM underperforms baseline (60.48%) by -3.63pp. The exponential loss-ratio scaling may be too aggressive for 3-frame CREMA-D. The AGM paper reports 67.21% on CREMA-D but with different architecture and preprocessing. Could try α=0.5 or α=2.5 but unlikely to close the gap.
+
+### Grad-Blending Results (seed=42)
+
+| Method | Best Acc | Notes |
+|--------|----------|-------|
+| **G-Blend** | **58.60%** | Overfitting-to-generalization ratio weighting |
+
+**Observation:** G-Blend underperforms baseline (60.48%) by -1.88pp. The OG-ratio weighting oscillates between modalities (epoch 1: audio=0.98, visual=0.02; epoch 2: audio=0.03, visual=0.97) suggesting instability in the early epochs that may prevent effective learning.
+
+### Full Ranking (single seed=42, CREMA-D 3f)
+
+| Rank | Method | Best Acc (seed=42) | vs Baseline |
+|------|--------|--------------------|-------------|
+| 1 | **Boost+OGM-GE (α=0.75)** | **71.37%** | **+10.89pp** |
+| 2 | OGM-GE | 67.88% | +7.40pp |
+| 3 | InfoReg (100ep) | 67.07% | +6.59pp |
+| 4 | MMPareto | 67.07% | +6.59pp |
+| 5 | MILES (τ=0.2) | 64.52% | +4.04pp |
+| 6 | Baseline | 60.48% | — |
+| 7 | Boost only | 60.35% | -0.13pp |
+| 8 | G-Blend | 58.60% | -1.88pp |
+| 9 | AGM (α=1.0) | 56.85% | -3.63pp |
+
+### Output Locations
+
+| Experiment | Directory |
+|-----------|-----------|
+| MMPareto seed=42 | `outputs/sweep_3f/3f_mmpareto_seed42/` |
+| AGM seed=42 | `outputs/sweep_3f/3f_agm_seed42/` |
+| G-Blend seed=42 | `outputs/sweep_3f/3f_gblend_seed42/` |
+
+### Next: Multi-Seed (5 seeds each)
+
+Seeds: 42, 123, 456, 789, 1024. 12 runs remaining (4 per method). ETA ~6 hours total.
+
+---
+
+*Last updated: 2026-04-09 (All 3 new baselines seed=42 complete. MMPareto: 67.07%, AGM: 56.85%, G-Blend: 58.60%. Multi-seed pending.)*
