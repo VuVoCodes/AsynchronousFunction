@@ -1184,10 +1184,118 @@ Our baseline (85.77%) already exceeds CGGM's reported CGGM result (73.94%) by 12
 | AGM seed=42 | `outputs/sweep_3f/3f_agm_seed42/` |
 | G-Blend seed=42 | `outputs/sweep_3f/3f_gblend_seed42/` |
 
-### Next: Multi-Seed (5 seeds each)
+### Multi-Seed Results (5 seeds each)
 
-Seeds: 42, 123, 456, 789, 1024. 12 runs remaining (4 per method). ETA ~6 hours total.
+**Date:** 2026-04-09
+**Seeds:** 42, 123, 456, 789, 1024
+
+| Method | seed42 | seed123 | seed456 | seed789 | seed1024 | **Mean ± Std** |
+|--------|--------|---------|---------|---------|----------|----------------|
+| **MMPareto** | 67.07 | 64.92 | 65.46 | 64.92 | 65.19 | **65.51 ± 0.87%** |
+| **G-Blend** | 58.60 | 64.11 | 61.83 | 60.48 | 60.48 | **61.10 ± 1.87%** |
+| **AGM (α=1.0)** | 56.85 | 58.60 | 57.53 | 56.59 | 57.53 | **57.42 ± 0.73%** |
+
+### Full CREMA-D 3f Ranking (Multi-Seed)
+
+| Rank | Method | Mean ± Std | vs Baseline |
+|------|--------|-----------|-------------|
+| 1 | **Boost+OGM-GE (α=0.75)** | **71.45 ± 1.71%** | **+9.86pp** |
+| 2 | OGM-GE | 69.14 ± 1.13% | +7.55pp |
+| 3 | InfoReg | 67.72 ± 0.83% | +6.13pp |
+| 4 | MMPareto | 65.51 ± 0.87% | +3.92pp |
+| 5 | Baseline | 61.59 ± 0.80% | — |
+| 6 | G-Blend | 61.10 ± 1.87% | -0.49pp |
+| 7 | MILES | 61.05 ± 2.52% | -0.54pp |
+| 8 | CGGM | 50.22 ± 1.39% | -11.37pp |
+| 9 | AGM (α=1.0) | 57.42 ± 0.73% | -4.17pp |
+
+### Analysis
+
+1. **MMPareto is the 4th best method** at 65.51%, trailing OGM-GE by 3.63pp and Boost+OGM-GE by 5.94pp. The Pareto-optimal gradient weighting helps vs baseline (+3.92pp) but is less effective than OGM-GE's simpler per-batch scaling.
+
+2. **G-Blend ≈ baseline** at 61.10% (-0.49pp). The overfitting-to-generalization ratio weighting doesn't help on CREMA-D — the OG ratio oscillates between modalities causing unstable weight assignments.
+
+3. **AGM underperforms baseline** at 57.42% (-4.17pp). The exponential loss-ratio scaling with α=1.0 is too aggressive. The AGM paper reports ~67% on CREMA-D with different architecture (early fusion) and hyperparameters.
+
+4. **Boost+OGM-GE maintains clear lead** over all 8 baselines, beating the next best (OGM-GE) by +2.31pp and the best new baseline (MMPareto) by +5.94pp.
+
+### Output Locations
+
+| Experiment | Directory |
+|-----------|-----------|
+| MMPareto 5 seeds | `outputs/sweep_3f/3f_mmpareto_seed{42,123,456,789,1024}/` |
+| AGM 5 seeds | `outputs/sweep_3f/3f_agm_seed{42,123,456,789,1024}/` |
+| G-Blend 5 seeds | `outputs/sweep_3f/3f_gblend_seed{42,123,456,789,1024}/` |
 
 ---
 
-*Last updated: 2026-04-09 (All 3 new baselines seed=42 complete. MMPareto: 67.07%, AGM: 56.85%, G-Blend: 58.60%. Multi-seed pending.)*
+## KS Dataset — New Baselines (Multi-Seed)
+
+**Date:** 2026-04-10
+**Dataset:** Kinetics-Sounds (audio-visual action recognition, 31 classes)
+**Setup:** Same as existing KS experiments — ResNet18 pretrained ImageNet, SGD lr=0.001, StepLR step=40, batch 64, 100 epochs
+**Seeds:** 42, 123, 456, 789, 1024
+
+### KS Multi-Seed Results
+
+| Method | seed42 | seed123 | seed456 | seed789 | seed1024 | **Mean ± Std** |
+|--------|--------|---------|---------|---------|----------|----------------|
+| **MMPareto** | 78.75 | 78.01 | 77.69 | 78.50 | 78.09 | **78.21 ± 0.38%** |
+| **AGM (α=1.0)** | 77.44 | 78.01 | 78.18 | 78.09 | 77.52 | **77.85 ± 0.30%** |
+| **G-Blend** | 76.38 | 79.23 | 78.83 | 76.95 | 77.36 | **77.75 ± 1.13%** |
+
+### Full KS Ranking (Multi-Seed)
+
+| Rank | Method | Mean ± Std | vs Baseline |
+|------|--------|-----------|-------------|
+| 1 | **Boost only (α=0.5)** | **79.17 ± 0.97%** | **+0.12pp** |
+| 2 | Baseline | 79.05 ± 0.40% | — |
+| 3 | MMPareto | 78.21 ± 0.38% | -0.84pp |
+| 4 | AGM | 77.85 ± 0.30% | -1.20pp |
+| 5 | G-Blend | 77.75 ± 1.13% | -1.30pp |
+| 6 | Boost+OGM-GE | 77.33 ± 0.64% | -1.72pp |
+| 7 | OGM-GE | 77.25 ± 0.79% | -1.80pp |
+| 8 | CGGM | 73.18 ± 0.27% | -5.87pp |
+
+### KS Analysis
+
+1. **All gradient modulation methods hurt on KS** — consistent with the low-imbalance pattern. Baseline (79.05%) is hard to beat when modalities are already balanced.
+
+2. **Boost-only still leads** at 79.17% — the self-attenuating property means it effectively does nothing when there's no imbalance, avoiding the degradation seen with throttling methods.
+
+3. **MMPareto is the best new baseline** at 78.21%, but still -0.84pp below baseline. The Pareto gradient weighting adds unnecessary complexity when objectives are already aligned.
+
+4. **AGM and G-Blend cluster together** at ~77.8%, both -1.2pp below baseline. On balanced data, any gradient intervention is counterproductive.
+
+5. **OGM-GE degradation confirmed** — all methods that throttle/modulate gradients (OGM-GE, MMPareto, AGM, G-Blend) degrade performance vs baseline, while boost-only preserves it.
+
+### Output Locations
+
+| Experiment | Directory |
+|-----------|-----------|
+| KS MMPareto 5 seeds | `outputs/sweep_ks/ks_mmpareto_seed{42,123,456,789,1024}/` |
+| KS AGM 5 seeds | `outputs/sweep_ks/ks_agm_seed{42,123,456,789,1024}/` |
+| KS G-Blend 5 seeds | `outputs/sweep_ks/ks_gblend_seed{42,123,456,789,1024}/` |
+
+---
+
+## AVE Dataset — New Baselines (Multi-Seed)
+
+**Date:** 2026-04-10
+**Dataset:** AVE (audio-visual event recognition, 28 classes)
+**Setup:** Same as existing AVE experiments — ResNet18 pretrained ImageNet, SGD lr=0.001, StepLR step=40, batch 64, 100 epochs
+**Seeds:** 42, 123, 456, 789, 1024
+
+### AVE Multi-Seed Results
+
+**Status:** In progress. MMPareto seeds 42+123 complete, rest running.
+
+| Method | seed42 | seed123 | seed456 | seed789 | seed1024 | **Mean ± Std** |
+|--------|--------|---------|---------|---------|----------|----------------|
+| **MMPareto** | 86.67 | 86.42 | — | — | — | pending |
+| **AGM** | — | — | — | — | — | pending |
+| **G-Blend** | — | — | — | — | — | pending |
+
+---
+
+*Last updated: 2026-04-10 (KS new baselines complete: MMPareto 78.21 ± 0.38%, AGM 77.85 ± 0.30%, G-Blend 77.75 ± 1.13%. AVE in progress.)*
