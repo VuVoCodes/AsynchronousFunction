@@ -1,0 +1,1 @@
+- [Section 4 review v1](section4-review.md) -- Score 5.5/10, experiments section has serious positioning and honesty gaps

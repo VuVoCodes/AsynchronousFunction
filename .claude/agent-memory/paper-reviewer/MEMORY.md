@@ -8,14 +8,15 @@
 - See `introduction-review.md` for detailed review of the Introduction section (v3: score 7.5/10)
 
 ## Key Experimental Facts
-- CREMA-D (3-frame): Boost+OGM-GE 71.45 +/- 1.71%, baseline 61.59%, OGM-GE 69.14%
+- CREMA-D (3-frame): Boost+OGM-GE 71.45 +/- 1.71%, baseline 61.59%, OGM-GE 69.14%, Boost-only 60.35% (seed=42, not in Table 1!)
 - AVE: Boost-only 87.41 +/- 0.26%, baseline 86.54%
 - KS: Boost-only 79.17 +/- 0.97%, baseline 79.05 +/- 0.40% (+0.12pp, NOT significant)
-- MOSEI: Boost+OGM-GE ~72.47%, baseline ~70.42%
-- MOSI: 73.47% vs 73.18% baseline (1 seed only, +0.29pp)
+- MOSEI: OGM-GE 72.47 > Boost+OGM-GE 72.43, baseline 70.42%, Boost-only 69.80% (BELOW baseline)
+- MOSI: OGM-GE 72.68 > Boost+OGM-GE 72.60, baseline 72.42% (all within noise)
 - CGGM comparison: CGGM dramatically underperforms (50.22% on CREMA-D) but this may be architecture mismatch
+- BraTS: Boost-only 85.98 +/- 1.15, baseline 85.77 +/- 0.62 (+0.21pp with higher variance)
 - KS improvement (+0.12pp) is within noise / not statistically significant
-- MOSI has only 1 seed — insufficient for claims
+- NEW baselines (seed=42 only): MMPareto 67.07%, AGM 56.85%, G-Blend 58.60%
 
 ## Recurring Issues to Watch
 - Claims of statistical significance need formal tests (not just mean +/- std)
@@ -39,6 +40,9 @@
 - v2: Score 6.5/10 — many fixes but KS/MOSI/MOSEI/segmentation issues remained
 - v3: Score 7.5/10 — most bib/formatting issues fixed, remaining: KS significance, MOSI seeds, segmentation claim, MOSEI framing
 - v4: Score 8.0/10 — restructured to 5 paragraphs + 3 contributions (CGGM template). Segmentation removed from contributions. Main result paragraph added. Key remaining issue: P5 "consistent improvements across all six datasets" is an overclaim (MOSEI/MOSI: method <= OGM-GE alone; KS not significant). CGGM comparison needs architecture qualifier.
+
+## Section 4 (Experiments) Review History
+- v1: Score 5.5/10 — HIGH: boost-only omitted from Table 1 CREMA-D, MOSEI/MOSI OGM-GE >= method, missing MMPareto/AGM/G-Blend baselines, KS +0.12pp not significant. MEDIUM: BraTS +0.21pp meaningless, no stat tests, ablation on different setting. See `section4-review.md`.
 
 ## Audit History
 - [Model trace audit 2026-04-08](audit_trace_2026-04-08.md) — All 175+ checkpoints verified, all numbers match, MOSEI +2.01 text ambiguity
