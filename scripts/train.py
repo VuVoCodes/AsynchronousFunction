@@ -2417,6 +2417,8 @@ def main():
                         help="Override continuous mode maximum boost scale")
     parser.add_argument("--continuous-noise-sigma", type=float, default=None,
                         help="Override continuous mode Gaussian noise sigma")
+    parser.add_argument("--continuous-eval-freq", type=int, default=None,
+                        help="Override continuous mode probe eval frequency K (probe refresh every K batches)")
     parser.add_argument("--exp-name", type=str, default=None,
                         help="Override experiment name (default: auto-generated)")
     parser.add_argument("--single-layer-fusion", action="store_true",
@@ -2449,6 +2451,7 @@ def main():
         "continuous_alpha": args.continuous_alpha,
         "continuous_scale_max": args.continuous_scale_max,
         "continuous_noise_sigma": args.continuous_noise_sigma,
+        "continuous_eval_freq": args.continuous_eval_freq,
     }
     for key, val in asgml_overrides.items():
         if val is not None:

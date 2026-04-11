@@ -1338,11 +1338,14 @@ Our baseline (85.77%) already exceeds CGGM's reported CGGM result (73.94%) by 12
 | 2 | OGM-GE | 69.14 ± 1.13% |
 | 3 | InfoReg | 67.72 ± 0.83% |
 | 4 | MMPareto | 65.51 ± 0.87% |
-| 5 | Baseline | 61.59 ± 0.80% |
-| 6 | G-Blend | 61.10 ± 1.87% |
-| 7 | MILES | 61.05 ± 2.52% |
-| 8 | AGM | 57.42 ± 0.73% |
-| 9 | CGGM | 50.22 ± 1.39% |
+| 5 | Boost only | 62.72 ± 1.65% |
+| 6 | Baseline | 61.59 ± 0.80% |
+| 7 | G-Blend | 61.10 ± 1.87% |
+| 8 | MILES | 61.05 ± 2.52% |
+| 9 | AGM | 57.42 ± 0.73% |
+| 10 | CGGM | 50.22 ± 1.39% |
+
+**Boost-only CREMA-D 3f per-seed:** 60.35, 65.32, 63.04, 61.83, 63.04 → **62.72 ± 1.65%** (+1.13pp over baseline). Seed=42 was an outlier low — multi-seed average is meaningfully above baseline.
 
 ### KS (LOW imbalance)
 | Rank | Method | Mean ± Std |
