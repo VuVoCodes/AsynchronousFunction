@@ -32,6 +32,7 @@ sys.path.insert(0, os.path.join(PROJECT_ROOT, 'Papers', 'CGGM'))
 from Papers.CGGM.datasets.BratsDataset import BraTSData
 from Papers.CGGM.models.segmodel import DeepLabMultiInput, SegClassifier
 from Papers.CGGM.src.eval_metrics import cosine_scheduler, cal_cos
+from src.models.probes import ProbeManager
 
 
 def set_seed(seed: int):
@@ -91,67 +92,158 @@ def cal_dice(pred, target):
     return wt_dice, tc_dice, et_dice
 
 
-class ProbeManager:
-    """Lightweight probes for monitoring per-modality representation quality."""
+class BraTSProbeAdapter:
+    """Adapts the main ProbeManager for BraTS spatial features.
 
-    def __init__(self, feature_dim, num_classes, device):
-        self.num_classes = num_classes
-        self.device = device
+    BraTS ASPP features are spatial (B, 256, H, W). This adapter pools them
+    to (B, 256) before passing to ProbeManager, and converts segmentation
+    labels to binary (tumor present/absent) for probe training.
+
+    Uses the same ProbeManager as all other datasets for consistency:
+    - Split-batch protocol (train on first half, eval on second half)
+    - EMA-smoothed probe accuracies
+    - Separate optimizers (no encoder backprop)
+    """
+
+    def __init__(self, feature_dim, num_classes, device, eval_freq=20, scale_ema_mu=0.3):
         self.modalities = ['flair', 't1ce', 't1', 't2']
+        self.pool = nn.AdaptiveAvgPool2d(1)
+        self.eval_freq = eval_freq  # K: probe refresh every K batches
+        self.scale_ema_mu = scale_ema_mu  # mu for scale EMA smoothing
 
-        # Simple probes: global avg pool + linear classifier
-        self.probes = {}
-        self.probe_optims = {}
-        for m in self.modalities:
-            probe = nn.Sequential(
-                nn.AdaptiveAvgPool2d(1),
-                nn.Flatten(),
-                nn.Linear(256, num_classes),  # ASPP output is 256-dim
-            ).to(device)
-            self.probes[m] = probe
-            self.probe_optims[m] = optim.Adam(probe.parameters(), lr=1e-3)
+        # Persistent EMA-smoothed boost scales (applied every batch)
+        self.stored_scales = {m: 1.0 for m in self.modalities}
 
-        self.prev_acc = {m: 0.0 for m in self.modalities}
+        # Binary classification probe: tumor present vs absent
+        self.probe_mgr = ProbeManager(
+            modalities=self.modalities,
+            feature_dim=feature_dim,
+            num_classes=2,
+            probe_type='linear',
+            probe_lr=1e-3,
+            device=device,
+            ema_alpha=0.1,
+        )
 
     def train_and_eval(self, features, labels):
-        """Train probes on detached features, return per-modality accuracy."""
-        accs = {}
-        # Downsample labels to match feature spatial size
-        labels_down = F.interpolate(
-            labels.float().unsqueeze(1), size=features[0].shape[2:], mode='nearest'
-        ).squeeze(1).long()
+        """Train and evaluate probes with split-batch on pooled features.
 
+        Args:
+            features: list of 4 tensors, each (B, 256, H, W) from ASPP
+            labels: segmentation labels (B, H, W)
+
+        Returns:
+            dict of per-modality probe accuracies (evaluated on held-out half)
+        """
+        batch_size = features[0].shape[0]
+        split = batch_size // 2
+        if split < 2:
+            return {m: 0.5 for m in self.modalities}
+
+        # Pool spatial features to (B, 256)
+        pooled = {}
         for i, m in enumerate(self.modalities):
-            feat = features[i].detach()
-            self.probe_optims[m].zero_grad()
-            pred = self.probes[m](feat)
+            pooled[m] = self.pool(features[i].detach()).flatten(1)  # (B, 256)
 
-            # Use global label (majority class in the patch)
-            global_label = (labels_down > 0).float().mean(dim=(1, 2))
-            binary_label = (global_label > 0.1).long()
+        # Convert segmentation labels to binary (tumor present/absent)
+        spatial_size = features[0].shape[2:]
+        labels_down = F.interpolate(
+            labels.float().unsqueeze(1), size=spatial_size, mode='nearest'
+        ).squeeze(1)
+        global_label = (labels_down > 0).float().mean(dim=(1, 2))
+        binary_labels = (global_label > 0.1).long()
 
-            loss = F.cross_entropy(pred, binary_label)
-            loss.backward()
-            self.probe_optims[m].step()
+        # Split batch: train on first half
+        train_features = {m: pooled[m][:split] for m in self.modalities}
+        train_targets = binary_labels[:split]
+        self.probe_mgr.train_probes(train_features, train_targets, num_steps=1)
 
-            with torch.no_grad():
-                pred_cls = pred.argmax(dim=1)
-                acc = (pred_cls == binary_label).float().mean().item()
-                accs[m] = acc
+        # Evaluate on second half
+        eval_features = {m: pooled[m][split:] for m in self.modalities}
+        eval_targets = binary_labels[split:]
+        results = self.probe_mgr.evaluate_probes(eval_features, eval_targets)
 
-        return accs
+        return {m: results[m]['accuracy'] for m in self.modalities}
 
-    def get_boost_scales(self, accs, alpha=0.5):
-        """Compute boost scales: weaker modalities get higher scaling."""
-        min_acc = min(accs.values())
-        max_acc = max(accs.values())
+    def update_scales(self, accs, alpha=0.5):
+        """Compute raw boost scales and apply EMA smoothing (mu=0.3).
+
+        Called every K batches when probes are refreshed. Updates stored_scales
+        which are applied to gradients on every batch.
+        """
+        # Use EMA-smoothed accuracies for stable scaling
+        ema_accs = self.probe_mgr.accuracy_ema
+        use_accs = ema_accs if all(v is not None for v in ema_accs.values()) else accs
+
+        min_acc = min(use_accs.values())
+        max_acc = max(use_accs.values())
         gap = max_acc - min_acc + 1e-8
 
-        scales = {}
         for m in self.modalities:
-            rel_weakness = 1.0 - (accs[m] - min_acc) / gap
-            scales[m] = min(1.0 + alpha * rel_weakness, 2.0)
-        return scales
+            rel_weakness = 1.0 - (use_accs[m] - min_acc) / gap
+            raw_scale = min(1.0 + alpha * rel_weakness, 2.0)
+            # EMA smoothing: bar_s = mu * s + (1-mu) * bar_s (Eq 7 in paper)
+            self.stored_scales[m] = (
+                self.scale_ema_mu * raw_scale +
+                (1 - self.scale_ema_mu) * self.stored_scales[m]
+            )
+
+    def get_stored_scales(self):
+        """Return current EMA-smoothed boost scales (applied every batch)."""
+        return self.stored_scales.copy()
+
+    def get_utilization_gap(self):
+        """Get current utilization gap from ProbeManager."""
+        return self.probe_mgr.compute_utilization_gap(use_ema=True)
+
+
+def apply_ogm_ge_brats(model, epoch, alpha=0.8, start=0, end=50):
+    """Apply OGM-GE to BraTS 4-modality model using gradient magnitude ratios.
+
+    Computes gradient norms per backbone, identifies dominant modalities
+    (norm > mean), and scales their gradients down with Gaussian noise.
+    """
+    if not (start <= epoch <= end):
+        return {}
+
+    backbone_names = ['backbone1', 'backbone2', 'backbone3', 'backbone4']
+    modality_names = ['flair', 't1ce', 't1', 't2']
+    tanh = torch.nn.Tanh()
+    relu = torch.nn.ReLU()
+
+    # Compute per-backbone gradient norms
+    grad_norms = {}
+    for bname, mname in zip(backbone_names, modality_names):
+        total_norm = 0.0
+        count = 0
+        for name, param in model.named_parameters():
+            if bname in name and param.grad is not None and len(param.grad.shape) >= 2:
+                total_norm += param.grad.data.norm().item() ** 2
+                count += 1
+        grad_norms[mname] = (total_norm ** 0.5) if count > 0 else 0.0
+
+    mean_norm = sum(grad_norms.values()) / len(grad_norms)
+    if mean_norm < 1e-8:
+        return {m: 1.0 for m in modality_names}
+
+    # Compute coefficients: dominant modalities (norm > mean) get scaled down
+    coeffs = {}
+    for mname in modality_names:
+        ratio = grad_norms[mname] / (mean_norm + 1e-8)
+        if ratio > 1.0:
+            coeffs[mname] = 1 - tanh(alpha * relu(torch.tensor(ratio))).item()
+        else:
+            coeffs[mname] = 1.0
+
+    # Apply modulation
+    for bname, mname in zip(backbone_names, modality_names):
+        if coeffs[mname] < 1.0:
+            for name, param in model.named_parameters():
+                if bname in name and param.grad is not None and len(param.grad.shape) >= 2:
+                    param.grad.data = param.grad.data * coeffs[mname] + \
+                        torch.zeros_like(param.grad).normal_(0, param.grad.std().item() + 1e-8)
+
+    return coeffs
 
 
 def train_epoch(model, loader, optimizer, criterion, scheduler, epoch, device, args,
@@ -182,12 +274,25 @@ def train_epoch(model, loader, optimizer, criterion, scheduler, epoch, device, a
 
         # ========== Mode-specific gradient modulation ==========
 
-        if args.mode == 'asgml_boost' and probe_mgr is not None:
-            # Train probes and get boost scales
-            accs = probe_mgr.train_and_eval(hf, labels)
-            scales = probe_mgr.get_boost_scales(accs, alpha=args.boost_alpha)
+        if args.mode in ('ogm_ge', 'boost_ogm_ge'):
+            apply_ogm_ge_brats(model, epoch, alpha=args.ogm_alpha,
+                               start=args.ogm_start, end=args.ogm_end)
 
-            # Scale encoder gradients
+        if args.mode in ('boost_ogm_ge', 'asgml_boost') and probe_mgr is not None:
+            # Every K batches: refresh probes and update EMA-smoothed scales
+            if (i_batch + 1) % probe_mgr.eval_freq == 0:
+                accs = probe_mgr.train_and_eval(hf, labels)
+                probe_mgr.update_scales(accs, alpha=args.boost_alpha)
+
+                # Log probe metrics
+                gap = probe_mgr.get_utilization_gap() or 0.0
+                scales = probe_mgr.get_stored_scales()
+                acc_str = ', '.join(f'{m}={accs[m]:.3f}' for m in ['flair', 't1ce', 't1', 't2'])
+                scale_str = ', '.join(f'{m}={scales[m]:.3f}' for m in ['flair', 't1ce', 't1', 't2'])
+                print(f'  [batch {i_batch}] probe_acc: {acc_str} | gap={gap:.3f} | scales: {scale_str}', flush=True)
+
+            # Every batch: apply stored EMA-smoothed scales to encoder gradients
+            scales = probe_mgr.get_stored_scales()
             backbone_names = ['backbone1', 'backbone2', 'backbone3', 'backbone4']
             modality_names = ['flair', 't1ce', 't1', 't2']
             for bname, mname in zip(backbone_names, modality_names):
@@ -274,7 +379,7 @@ def evaluate(model, loader, criterion, device):
 def main():
     parser = argparse.ArgumentParser(description='BraTS training with ASGML')
     parser.add_argument('--mode', type=str, default='baseline',
-                        choices=['baseline', 'asgml_boost', 'cggm'])
+                        choices=['baseline', 'asgml_boost', 'cggm', 'ogm_ge', 'boost_ogm_ge'])
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--batch-size', type=int, default=12)
@@ -284,6 +389,10 @@ def main():
     parser.add_argument('--exp-name', type=str, default=None)
     # ASGML
     parser.add_argument('--boost-alpha', type=float, default=0.5)
+    # OGM-GE
+    parser.add_argument('--ogm-alpha', type=float, default=0.8, help='OGM-GE alpha coefficient')
+    parser.add_argument('--ogm-start', type=int, default=0, help='OGM-GE start epoch')
+    parser.add_argument('--ogm-end', type=int, default=50, help='OGM-GE end epoch')
     # CGGM
     parser.add_argument('--cggm-rou', type=float, default=1.3)
     parser.add_argument('--cggm-lamda', type=float, default=0.2)
@@ -344,8 +453,16 @@ def main():
                                   weight_decay=1e-4, momentum=0.9)
         log(f'CGGM: rou={args.cggm_rou}, lamda={args.cggm_lamda}')
 
+    elif args.mode == 'ogm_ge':
+        log(f'OGM-GE: alpha={args.ogm_alpha}, epochs=[{args.ogm_start}, {args.ogm_end}]')
+
+    elif args.mode == 'boost_ogm_ge':
+        probe_mgr = BraTSProbeAdapter(256, 2, device)
+        log(f'Boost+OGM-GE: boost_alpha={args.boost_alpha}, ogm_alpha={args.ogm_alpha}, '
+            f'ogm_epochs=[{args.ogm_start}, {args.ogm_end}]')
+
     elif args.mode == 'asgml_boost':
-        probe_mgr = ProbeManager(256, 4, device)
+        probe_mgr = BraTSProbeAdapter(256, 2, device)
         log(f'ASGML boost: alpha={args.boost_alpha}')
 
     # Training

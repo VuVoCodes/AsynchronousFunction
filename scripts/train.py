@@ -3140,12 +3140,7 @@ def main():
     if args.mode == "mmpareto":
         logger.info(f"MMPareto mode: γ={args.mmpareto_gamma}")
 
-        optimizer = torch.optim.SGD(
-            model.parameters(),
-            lr=config["training"]["lr"],
-            momentum=config["training"].get("momentum", 0.9),
-            weight_decay=config["training"].get("weight_decay", 1e-4),
-        )
+        optimizer = get_optimizer(model, config)
         lr_scheduler = get_scheduler(optimizer, config)
 
         start_epoch = 1
@@ -3208,12 +3203,7 @@ def main():
             f"modulation=[{args.agm_modulation_start}, {args.agm_modulation_end}]"
         )
 
-        optimizer = torch.optim.SGD(
-            model.parameters(),
-            lr=config["training"]["lr"],
-            momentum=config["training"].get("momentum", 0.9),
-            weight_decay=config["training"].get("weight_decay", 1e-4),
-        )
+        optimizer = get_optimizer(model, config)
         lr_scheduler = get_scheduler(optimizer, config)
 
         start_epoch = 1
@@ -3277,12 +3267,7 @@ def main():
     if args.mode == "gblend":
         logger.info("G-Blend mode: overfitting-to-generalization ratio weighting")
 
-        optimizer = torch.optim.SGD(
-            model.parameters(),
-            lr=config["training"]["lr"],
-            momentum=config["training"].get("momentum", 0.9),
-            weight_decay=config["training"].get("weight_decay", 1e-4),
-        )
+        optimizer = get_optimizer(model, config)
         lr_scheduler = get_scheduler(optimizer, config)
 
         start_epoch = 1

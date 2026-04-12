@@ -44,6 +44,12 @@
 ## Section 4 (Experiments) Review History
 - v1: Score 5.5/10 — HIGH: boost-only omitted from Table 1 CREMA-D, MOSEI/MOSI OGM-GE >= method, missing MMPareto/AGM/G-Blend baselines, KS +0.12pp not significant. MEDIUM: BraTS +0.21pp meaningless, no stat tests, ablation on different setting. See `section4-review.md`.
 
+## Full Paper Feasibility Assessment
+- [NeurIPS 2026 feasibility review](feasibility_review_2026-04-12.md) — Score 4.5-5.5/10, borderline-to-weak-reject. Key: empirics on CREMA-D only, no theory, overclaims, missing sections. Tier 1 fixes could reach 5,5,6.
+
+## Code Cross-Checks
+- [Section 3.2 cross-check](section32-crosscheck.md) — 7 verified correct, 6 discrepancies (BraTS probe divergence, EMA cold start, notation overload, missing probe train steps in paper)
+
 ## Audit History
 - [Model trace audit 2026-04-08](audit_trace_2026-04-08.md) — All 175+ checkpoints verified, all numbers match, MOSEI +2.01 text ambiguity
 - [Std deviation inconsistency](std_inconsistency.md) — Pop vs sample std used inconsistently across datasets
