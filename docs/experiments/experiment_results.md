@@ -1096,7 +1096,15 @@ Our baseline (85.77%) already exceeds CGGM's reported CGGM result (73.94%) by 12
 | 3 | Baseline | 86.21 | 85.90 | 84.93 | 85.20 | 86.59 | **85.77 ± 0.62%** |
 | 4 | CGGM (ρ=1.3, λ=0.2) | 81.67 | 83.21 | 81.42 | 79.48 | 79.89 | **81.13 ± 1.34%** |
 
-**BraTS Boost+OGM-GE:** Pending rerun (5 seeds). Previous run interrupted.
+### BraTS Boost+OGM-GE Results (Multi-Seed)
+
+**Date:** 2026-04-13
+
+| Method | seed42 | seed123 | seed456 | seed789 | seed1024 | **Mean ± Std** |
+|--------|--------|---------|---------|---------|----------|----------------|
+| **Boost+OGM-GE** | 86.63 | 86.67 | 86.12 | 86.66 | 86.39 | **86.49 ± 0.21%** |
+
+**Boost+OGM-GE is the new best on BraTS** at 86.49%, beating OGM-GE (86.21%, +0.28pp) and boost-only (85.98%, +0.51pp) with the lowest variance (±0.21%). The combination of OGM-GE throttling dominant modalities + probe-guided boosting of FLAIR yields consistent improvement across all 5 seeds.
 
 **OGM-GE Analysis:**
 1. **OGM-GE matches boost-only** at 86.21% vs 85.98% (+0.23pp). Both are within noise of baseline (85.77%).
