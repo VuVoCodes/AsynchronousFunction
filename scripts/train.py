@@ -54,7 +54,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.models import MultimodalModel, ProbeManager
 from src.models.fusion import ConcatFusion
-from src.datasets import CREMADDataset, AVEDataset, KineticsSoundsDataset, MOSEIDataset, CMUMOSIDataset
+from src.datasets import CREMADDataset, AVEDataset, KineticsSoundsDataset, MOSEIDataset, CMUMOSIDataset, SarcasmDataset, TwitterDataset
 from src.losses import (
     ASGMLLoss,
     ASGMLScheduler,
@@ -100,6 +100,13 @@ def get_dataset(config: dict, split: str):
     elif name == "mosi":
         mosi_split = "test" if split == "test" else split
         return CMUMOSIDataset(root=root, split=mosi_split)
+    elif name == "sarcasm":
+        # Sarcasm uses 'valid' instead of 'test' for validation
+        sarcasm_split = split if split == "train" else ("valid" if split == "valid" else "test")
+        return SarcasmDataset(root=root, split=sarcasm_split)
+    elif name == "twitter":
+        twitter_split = split if split == "train" else ("valid" if split == "valid" else "test")
+        return TwitterDataset(root=root, split=twitter_split)
     else:
         raise ValueError(f"Unknown dataset: {name}")
 
@@ -2573,6 +2580,13 @@ def main():
         for k, v in dims.items():
             config["dataset"][f"{k}_dim"] = v
         logger.info(f"MOSI feature dims: {dims}")
+    elif config["model"]["backbone"] == "mlp" and config["dataset"]["name"] in ("sarcasm", "twitter"):
+        config["dataset"]["text_dim"] = train_dataset.text_dim
+        config["dataset"]["image_dim"] = train_dataset.image_dim
+        logger.info(
+            f"{config['dataset']['name'].capitalize()} feature dims: "
+            f"text={train_dataset.text_dim}, image={train_dataset.image_dim}"
+        )
 
     # Create model
     # Build encoder config per modality
@@ -2585,7 +2599,7 @@ def main():
         }
         # For MLP backbone (pre-extracted features), pass input dimensions
         if backbone == "mlp":
-            dim_key_map = {"text": "text_dim", "audio": "audio_dim", "vision": "visual_dim", "visual": "visual_dim"}
+            dim_key_map = {"text": "text_dim", "audio": "audio_dim", "vision": "visual_dim", "visual": "visual_dim", "image": "image_dim"}
             dim_key = dim_key_map.get(m, f"{m}_dim")
             enc_cfg["input_dim"] = config["dataset"].get(dim_key, 300)
             enc_cfg["dropout"] = config["model"].get("dropout", 0.3)
