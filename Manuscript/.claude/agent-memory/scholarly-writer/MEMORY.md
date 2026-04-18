@@ -1,0 +1,1 @@
+- [Paper structure](paper_structure.md) -- PGGB paper section layout, labels, macros, and formatting conventions

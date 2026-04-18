@@ -534,48 +534,32 @@ The convergence rate in Eq.~\eqref{eq:convergence} matches the standard nonconve
 \section{Experiments}
 \label{sec:experiments}
 
-We evaluate probe-guided gradient boosting across eight benchmarks spanning three tasks (classification, regression, segmentation), four input domains (audio-visual, language-audio-visual, text-image, medical imaging), and two to four modalities. All methods in our comparison are trained under identical conditions (architecture, optimizer, learning rate schedule, number of epochs, and random seeds); absolute numbers may therefore differ from those reported in original publications, but relative comparisons are controlled. Each experiment is repeated over five random seeds, and we report mean $\pm$ standard deviation.
+We evaluate probe-guided gradient boosting across eight benchmarks spanning three tasks (classification, regression, segmentation), four input domains (audio-visual, language-audio-visual, text-image, medical imaging), and two to four modalities. All methods are trained under identical conditions; absolute numbers may differ from original publications, but relative comparisons are controlled. Each experiment is repeated over five random seeds, and we report mean $\pm$ standard deviation.
 
-
-%---------- 4.1 Datasets and Setup ----------
-\subsection{Datasets and setup}
+%---------- 4.1 Experimental Setup ----------
+\subsection{Experimental setup}
 \label{sec:datasets}
 
-\paragraph{CREMA-D}~\citep{cao2014cremad} is an audio-visual emotion recognition dataset with six emotion classes. Audio is the dominant modality in this setting, producing a large utilization gap that makes CREMA-D a standard benchmark for modality imbalance methods~\citep{peng2022ogmge,guo2024cggm}. We use ResNet-18 encoders trained from scratch with 3 video frames sampled at 3 FPS, concatenation fusion, SGD (lr$=$0.001, weight decay $10^{-4}$), StepLR (step size 70), batch size 64, and 100 epochs.
+\textbf{Datasets.}
+We use eight datasets spanning diverse modality combinations and imbalance levels. \emph{Audio-visual:} CREMA-D~\citep{cao2014cremad} (6-class emotion recognition; audio-dominant, high imbalance), AVE~\citep{tian2018ave} (28-class event classification; low imbalance), and Kinetics-Sounds (KS)~\citep{arandjelovic2017kinetics} (31-class action recognition; low imbalance). All three use ResNet-18 encoders with concatenation fusion. \emph{Sentiment:} CMU-MOSEI~\citep{zadeh2018mosei} (text, audio, vision with BERT/COVAREP/FACET features; text-dominant, medium imbalance) and CMU-MOSI~\citep{zadeh2016mosi} (same modalities with GloVe/COVAREP/FACET; low imbalance), both using two-layer MLP encoders. \emph{Text-image:} Twitter15~\citep{yu2019tombert} (3-class sentiment) and Sarcasm~\citep{cai2019sarcasm} (binary detection), both using frozen BERT and ResNet-18 features with MLP encoders and exhibiting low imbalance. \emph{Segmentation:} BraTS~2021~\citep{baid2021brats} (4-modality brain tumor segmentation with FLAIR, T1ce, T1, T2; FLAIR-dominant, medium imbalance), using DeepLab v3+ with ResNet-101 encoders and Dice + cross-entropy loss. Probes on BraTS perform binary classification (tumor present vs.\ absent) since dense prediction probes on globally pooled features are not meaningful for the full segmentation task. Dataset-specific training configurations are provided in the supplementary material.
 
-\paragraph{AVE}~\citep{tian2018ave} is an audio-visual event classification dataset with 28 categories. Both modalities contribute comparably, yielding low imbalance. We use ImageNet-pretrained ResNet-18 encoders with the same fusion and optimizer as CREMA-D, except with StepLR step size 40.
-
-\paragraph{Kinetics-Sounds (KS)}~\citep{arandjelovic2017kinetics} contains 31 action classes with audio and visual streams. As with AVE, the modality gap is small. We adopt the same pretrained ResNet-18 setup as AVE.
-
-\paragraph{CMU-MOSEI}~\citep{zadeh2018mosei} is a three-modality sentiment analysis dataset (text, audio, vision) with pre-extracted features: BERT embeddings (768-d) for text, COVAREP for audio, and FACET for vision. Encoders are two-layer MLPs (512 hidden units, dropout 0.3) with concatenation fusion, trained with Adam (lr$=$0.001), StepLR (step size 40), batch size 64, and 100 epochs. Text is the dominant modality; the imbalance level is moderate.
-
-\paragraph{CMU-MOSI}~\citep{zadeh2016mosi} follows the same three-modality sentiment setup as MOSEI but uses GloVe embeddings (300-d) for text. The modality gap is small relative to MOSEI.
-
-\paragraph{Twitter15}~\citep{yu2019tombert} is a text-image aspect-based sentiment classification dataset with three classes. We use pre-extracted frozen BERT (768-d) and ResNet-18 (512-d) features with two-layer MLP encoders (512 hidden units, dropout 0.3), concatenation fusion, Adam (lr$=$0.001), StepLR (step size 40), batch size 64, and 100 epochs. The modality gap is small.
-
-\paragraph{Sarcasm}~\citep{cai2019sarcasm} is a text-image sarcasm detection dataset (binary classification). We use the same pre-extracted feature setup and training configuration as Twitter15. The dataset is larger (19,816 train samples) with low modality imbalance.
-
-\paragraph{BraTS 2021}~\citep{baid2021brats} is a four-modality brain tumor segmentation benchmark (FLAIR, T1ce, T1, T2). We use DeepLab v3+ with four ResNet-101 encoders (one per modality) and a shared decoder, trained with SGD and cosine learning rate scheduling (base lr$=$0.01, 5-epoch warmup), Dice + cross-entropy loss (class weights: [0.2, 0.3, 0.25, 0.25]), batch size 12, and 100 epochs. Data is split into 1000 train, 125 validation, and 126 test volumes. Since dense prediction probes on globally pooled features are not meaningful for the full 4-class segmentation task, probes perform binary classification (tumor present vs.\ absent) derived from the segmentation labels. Cross-paper BraTS numbers are not directly comparable due to differences in data splits and preprocessing.
-
-\paragraph{Method hyperparameters.} Probe-guided gradient boosting uses a fixed set of hyperparameters across all eight datasets: linear probes with Adam optimizer (lr$=$0.001), probe evaluation interval $K{=}20$, EMA coefficients $\beta{=}0.1$ and $\mu{=}0.3$, boost cap $s_{\max}{=}2.0$, and unimodal regularization weight $\gamma{=}1.0$. The boost strength is set to $\alpha{=}0.5$ for boost-only and $\alpha{=}0.75$ when combined with OGM-GE.
-
-\paragraph{Imbalance categorization.}
-\label{sec:imbalance_cat}
-We categorize datasets by the utilization gap $\delta$ (Eq.~\eqref{eq:utilization_gap}) measured from probe accuracies during baseline training (no balancing intervention). Following the observation that $\delta$ values across our benchmarks cluster into three distinct ranges, we adopt the following thresholds: \emph{high imbalance} ($\delta > 0.15$), \emph{medium imbalance} ($0.05 < \delta \leq 0.15$), and \emph{low imbalance} ($\delta \leq 0.05$). Under this criterion, CREMA-D is the only high-imbalance dataset, with audio probe accuracy exceeding visual by a wide margin. CMU-MOSEI and BraTS~2021 exhibit medium imbalance (text dominates in MOSEI; FLAIR dominates in BraTS). The remaining five datasets (AVE, KS, CMU-MOSI, Twitter15, and Sarcasm) are low-imbalance, with all modalities reaching comparable probe accuracy by convergence.
-
-
-%---------- 4.2 Baselines ----------
-\subsection{Baselines}
+\textbf{Baselines.}
 \label{sec:baselines}
+We compare against eight methods: \textbf{Baseline} (joint training, no balancing), \textbf{OGM-GE}~\citep{peng2022ogmge} (gradient throttling via discriminative ratio with Gaussian noise), \textbf{MMPareto}~\citep{wei2024mmpareto} (Pareto-optimal gradient weights), \textbf{AGM}~\citep{li2023agm} (exponential loss-ratio scaling), \textbf{G-Blend}~\citep{wang2020gblending} (overfitting-to-generalization ratio weighting), \textbf{CGGM}~\citep{guo2024cggm} (classifier-guided magnitude and direction modulation, adapted from its original Transformer setting to our CNN/MLP pipeline), \textbf{InfoReg}~\citep{huang2025inforeg} (Fisher information regularization), and \textbf{MILES}~\citep{guerra2025miles} (per-modality learning rate adjustment). InfoReg and MILES are evaluated on CREMA-D only, as their released implementations target audio-visual classification.
 
-We compare against eight methods. \textbf{Baseline} trains all modalities jointly with no balancing intervention. \textbf{OGM-GE}~\citep{peng2022ogmge} throttles the dominant modality's gradient using a discriminative ratio with Gaussian noise injection. \textbf{MMPareto}~\citep{wei2024mmpareto} computes Pareto-optimal gradient weights to balance modality contributions. \textbf{AGM}~\citep{li2023agm} applies exponential loss-ratio scaling to modulate encoder gradients. \textbf{G-Blend}~\citep{wang2020gblending} weights modalities by their overfitting-to-generalization ratio. \textbf{CGGM}~\citep{guo2024cggm} uses auxiliary classifiers to modulate both gradient magnitude and direction; as CGGM was originally proposed for Transformer-based encoders, we adapt it to our CNN/MLP pipeline for controlled comparison. \textbf{InfoReg}~\citep{huang2025inforeg} regulates unimodal information during the prime learning window via Fisher information. \textbf{MILES}~\citep{guerra2025miles} adjusts per-modality learning rates based on conditional utilization rate differences. InfoReg and MILES are evaluated on CREMA-D only, as their released implementations target audio-visual classification. For the OPM comparison (Section~\ref{sec:opm_comparison}), we additionally compare against \textbf{OPM}~\citep{wei2024opm}, which uses feed-forward feature dropping, under OPM's single-layer fusion architecture.
+\textbf{Implementation details.}
+All classification experiments use concatenation fusion, batch size 64, and 100 epochs. Audio-visual datasets use SGD (lr$=$0.001, weight decay $10^{-4}$) with StepLR scheduling; sentiment and text-image datasets use Adam (lr$=$0.001) with StepLR (step size 40). BraTS uses SGD with cosine scheduling (base lr$=$0.01, 5-epoch warmup) and batch size 12. Probe-guided gradient boosting uses identical hyperparameters across all datasets: linear probes with Adam (lr$=$0.001), evaluation interval $K{=}20$, EMA coefficients $\beta{=}0.1$ and $\mu{=}0.3$, boost cap $s_{\max}{=}2.0$, unimodal regularization weight $\gamma{=}1.0$, and boost strength $\alpha{=}0.5$ (boost-only) or $\alpha{=}0.75$ (combined with OGM-GE).
+
+\textbf{Imbalance categorization.}
+\label{sec:imbalance_cat}
+We categorize datasets by the utilization gap $\delta$ (Eq.~\eqref{eq:utilization_gap}) measured during baseline training: \emph{high} ($\delta > 0.15$): CREMA-D; \emph{medium} ($0.05 < \delta \leq 0.15$): CMU-MOSEI, BraTS~2021; \emph{low} ($\delta \leq 0.05$): AVE, KS, CMU-MOSI, Twitter15, Sarcasm.
 
 
-%---------- 4.3 Main Results ----------
+%---------- 4.2 Main Results ----------
 \subsection{Main results}
 \label{sec:main_results}
 
-Table~\ref{tab:main_results} presents the main results across all eight benchmarks. We report classification accuracy for the seven classification/regression datasets and average Dice score for BraTS~2021.
+Table~\ref{tab:main_results} presents results across all eight benchmarks (accuracy for classification/regression; average Dice for BraTS~2021).
 
 \begin{table}[t]
 \centering
@@ -603,26 +587,11 @@ Boost+OGM-GE ($\alpha{=}0.75$) & \textbf{71.45}{\scriptsize$\pm$1.71} & 87.23{\s
 }
 \end{table}
 
-\paragraph{High-imbalance setting.}
-On CREMA-D, the dataset with the largest modality gap, combining probe-guided boosting with OGM-GE yields $71.45\%$ accuracy, a $+9.86$ percentage point (pp) improvement over the baseline and $+2.31$ pp over OGM-GE alone. The combination also outperforms all other baselines: MMPareto ($+5.94$ pp), InfoReg ($+3.73$ pp), G-Blend ($+10.35$ pp), MILES ($+10.40$ pp), and AGM ($+14.03$ pp). Boost-only achieves $62.72\%$ ($+1.13$ pp over baseline), confirming that on high-imbalance data, amplifying the weaker modality's gradient alone is insufficient; the combination with throttling, which also suppresses the dominant modality, is needed.
+The results reveal a consistent relationship between imbalance severity and the preferred method configuration. On the high-imbalance dataset (CREMA-D), boost+OGM-GE yields $71.45\%$ accuracy ($+9.86$ pp over baseline, $+2.31$ pp over OGM-GE alone), outperforming all baselines including MMPareto ($+5.94$ pp), InfoReg ($+3.73$ pp), and MILES ($+10.40$ pp). Boost-only achieves $62.72\%$ ($+1.13$ pp), confirming that amplifying the weaker modality alone is insufficient when the imbalance is large; combining boosting with throttling provides the necessary two-sided intervention. On the five low-imbalance datasets, a qualitatively different pattern emerges: boost-only consistently preserves or slightly improves baseline performance (e.g., AVE: $87.41\%$, $+0.87$ pp; Twitter15: $66.85\%$, $+0.25$ pp), while gradient modulation baselines frequently degrade it (OGM-GE hurts KS by $-1.80$ pp, Twitter15 by $-0.27$ pp, Sarcasm by $-0.59$ pp). This behavior is consistent with the self-attenuating property of the boost (Section~\ref{sec:boost}): when $\delta$ is small, boost scales approach unity and the intervention vanishes. On the medium-imbalance datasets, both OGM-GE and boost+OGM-GE perform comparably on CMU-MOSEI ($72.47\%$ vs.\ $72.43\%$), suggesting throttling alone captures most available improvement. On BraTS~2021, boost+OGM-GE achieves $86.49\%$ Dice ($+0.72$ pp over baseline), generalizing to dense prediction with a substantially different architecture (DeepLab v3+ with ResNet-101) and loss function without requiring any modification to the probe mechanism. We note that CGGM consistently underperforms the baseline across all benchmarks, likely due to architectural mismatch: it was designed for Transformer-based encoders with attention-based fusion, and these results should not be taken as representative of its performance in its intended setting. Across datasets, we also observe a tendency toward reduced variance with probe-guided boosting (e.g., AVE: $0.26\%$ vs.\ $0.42\%$ baseline std), consistent with the EMA-smoothed probe signal providing a stabilizing effect.
 
-\paragraph{Low-imbalance settings.}
-On the five low-imbalance datasets (AVE, KS, CMU-MOSI, Twitter15, Sarcasm), the probe-guided boost exhibits qualitatively different behavior from high-imbalance settings. On AVE, boost-only achieves the best result ($87.41\%$, $+0.87$ pp over baseline), ahead of G-Blend ($87.09\%$) and OGM-GE ($86.96\%$). On KS, boost-only and the baseline are within noise ($79.17\%$ vs.\ $79.05\%$; $+0.12$ pp). This pattern is consistent with the self-attenuating property of the boost mechanism (Section~\ref{sec:boost}): when the utilization gap $\delta$ is small, the boost scales approach unity and the intervention effectively vanishes. The two text-image datasets reinforce this pattern: on Twitter15, boost-only leads at $66.85\%$ ($+0.25$ pp) while OGM-GE degrades to $66.33\%$ ($-0.27$ pp); on Sarcasm, boost-only achieves $82.44\%$ ($+0.04$ pp) while OGM-GE drops to $81.81\%$ ($-0.59$ pp). Across all five low-imbalance datasets, every gradient modulation baseline (OGM-GE, MMPareto, AGM, G-Blend) either matches or degrades baseline performance, while boost-only consistently preserves it. On CMU-MOSI, all methods perform comparably ($<$0.3 pp from baseline).
-
-\paragraph{Medium-imbalance settings.}
-On CMU-MOSEI, where text dominates audio and vision, OGM-GE and boost+OGM-GE achieve comparable performance ($72.47\%$ vs.\ $72.43\%$), both substantially above the baseline ($+2.01$ pp). We interpret this as a setting where throttling alone already captures most of the available improvement, and the probe-guided boost does not interfere with or degrade the result. On BraTS~2021 with four MRI modalities, boost+OGM-GE achieves the best result at $86.49\%$ average Dice ($+0.72$ pp over baseline), followed by OGM-GE ($86.21\%$) and boost-only ($85.98\%$). The probe monitoring correctly identifies FLAIR as the weaker modality and applies targeted boosting (scale $\approx 1.5$ for FLAIR, $1.0$ for others), with the utilization gap converging from $0.08$ to $0.02$ as training progresses. CGGM underperforms the baseline by $4.64$ pp in this setting ($81.13\%$). This result demonstrates that the method generalizes to dense prediction tasks; we note that this experiment uses a substantially different architecture (DeepLab v3+ with ResNet-101 encoders) and loss function (Dice + CE) from the classification experiments, yet the probe mechanism requires no modification.
-
-\paragraph{Comparison with CGGM.}
-CGGM consistently underperforms the baseline across all eight benchmarks. This outcome is likely attributable to the architectural mismatch: CGGM was designed for Transformer-based encoders with attention-based fusion and relies on auxiliary classifiers that participate in the training loss. When adapted to our CNN/MLP pipeline with concatenation fusion, the coupled auxiliary signal may conflict with the main training objective. We include CGGM for completeness but note that these results should not be taken as representative of CGGM's performance in its intended setting.
-
-\paragraph{Variance reduction.}
-Across datasets where probe-guided boosting is active, we observe a tendency toward reduced variance. On AVE, boost-only reduces the standard deviation from $0.42\%$ (baseline) to $0.26\%$; on CMU-MOSEI, boost+OGM-GE achieves $0.65\%$ std compared to OGM-GE's $0.70\%$. While individual comparisons are suggestive rather than definitive, the pattern is consistent with the EMA-smoothed probe signal providing a stabilizing effect on training dynamics.
-
-
-%---------- 4.3.1 OPM Architecture Comparison ----------
 \paragraph{Comparison with OPM.}
 \label{sec:opm_comparison}
-To compare with OPM~\citep{wei2024opm}, which requires a single-layer fusion architecture, we run a separate controlled experiment on CREMA-D using OPM's architecture (Table~\ref{tab:opm}). Under this architecture, boost+OGM-GE achieves $71.77\%$, outperforming OPM+OGM ($69.84\%$, $+1.93$ pp), OPM alone ($65.43\%$), and OGM alone ($63.74\%$). The baseline in this architecture ($59.20\%$) is lower than in our primary architecture ($61.59\%$), which may reflect the reduced capacity of the single-layer fusion head.
+To compare with OPM~\citep{wei2024opm}, which requires a single-layer fusion architecture, we run a separate controlled experiment on CREMA-D (Table~\ref{tab:opm}). Boost+OGM-GE achieves $71.77\%$, outperforming OPM+OGM ($69.84\%$, $+1.93$ pp), OPM alone ($65.43\%$), and OGM alone ($63.74\%$).
 
 \begin{table}[t]
 \centering
@@ -643,11 +612,11 @@ Boost+OGM-GE ($\alpha{=}0.75$) & \textbf{71.77}{\scriptsize$\pm$0.91} \\
 \end{table}
 
 
-%---------- 4.4 Ablation Studies ----------
+%---------- 4.3 Ablation Studies ----------
 \subsection{Ablation studies}
 \label{sec:ablations}
 
-We ablate the components of probe-guided gradient boosting on CREMA-D with a single-frame visual input, which increases the modality gap relative to the 3-frame setting and amplifies differences between methods. Table~\ref{tab:ablation} reports results over five seeds.
+We ablate probe-guided gradient boosting on CREMA-D with single-frame visual input, which increases the modality gap and amplifies differences between methods. Table~\ref{tab:ablation} reports results over five seeds.
 
 \begin{table}[t]
 \centering
@@ -671,31 +640,18 @@ Boost+OGM-GE ($\alpha{=}0.75$)       & \textbf{62.69}{\scriptsize$\pm$0.22} \\
 \end{tabular}
 \end{table}
 
-\paragraph{Frequency and staleness baselines.}
-Reducing the dominant modality's update frequency yields marginal gains over the baseline ($+0.24$ pp and $+0.10$ pp for the two frequency variants), while true gradient staleness slightly degrades performance ($-1.05$ pp). These results suggest that simply withholding or delaying the dominant modality's gradient updates is insufficient to meaningfully improve modality balance in this setting.
-
-\paragraph{Boost-only vs.\ throttle-only.}
-Boost-only ($\alpha{=}0.5$) improves modestly over the baseline ($+0.16$ pp), while OGM-GE alone provides a larger gain ($+2.17$ pp). This is consistent with prior findings that throttling is the more impactful single-mechanism intervention when coupled monitoring is the only available signal~\citep{wei2024opm}. Our contribution is that decoupled monitoring enables the boost to complement throttling rather than compete with it.
-
-\paragraph{Combined mechanism.}
-Combining boost with OGM-GE at $\alpha{=}0.75$ achieves the best result ($62.69\%$), with a notably reduced standard deviation ($0.22\%$ vs.\ $1.42\%$ for OGM-GE alone). The improvement over OGM-GE alone is modest in absolute terms ($+0.22$ pp), but the sixfold reduction in variance suggests that the probe-guided boost provides a stabilizing signal that complements the noisier gradient-ratio-based throttling. Increasing $\alpha$ from $0.5$ to $0.75$ in the combined setting yields a small gain ($+0.32$ pp), indicating mild sensitivity to boost strength in this range.
+Reducing the dominant modality's update frequency yields marginal gains ($+0.24$ pp and $+0.10$ pp for the two frequency variants), while true gradient staleness slightly degrades performance ($-1.05$ pp), suggesting that simply withholding or delaying gradients is insufficient. Among the gradient-based interventions, OGM-GE alone provides the larger single-mechanism gain ($+2.17$ pp) compared to boost-only ($+0.16$ pp), consistent with prior findings that throttling is the more impactful individual intervention~\citep{wei2024opm}. However, combining boost with OGM-GE at $\alpha{=}0.75$ achieves the best result ($62.69\%$) with a sixfold reduction in standard deviation ($0.22\%$ vs.\ $1.42\%$ for OGM-GE alone), indicating that decoupled probe monitoring provides a stabilizing signal that complements the noisier gradient-ratio-based throttling.
 
 
-%---------- 4.5 Analysis ----------
+%---------- 4.4 Analysis ----------
 \subsection{Analysis}
 \label{sec:analysis}
 
-\paragraph{Dataset-adaptive behavior.}
-A consistent pattern emerges across the eight benchmarks: the preferred configuration adapts to the degree of modality imbalance. On the high-imbalance dataset (CREMA-D), the combined boost+OGM-GE mechanism is most effective, providing two-sided pressure toward balance. On the five low-imbalance datasets (AVE, KS, CMU-MOSI, Twitter15, Sarcasm), boost-only is sufficient and gradient modulation methods consistently degrade performance: OGM-GE hurts on KS ($-1.80$ pp), Twitter15 ($-0.27$ pp), and Sarcasm ($-0.59$ pp). This adaptive behavior arises naturally from the self-attenuating property of the boost: when the utilization gap $\delta$ is small, the boost scales $\bar{s}_m$ remain near unity (Eq.~\ref{eq:boost_scale}), and the method applies minimal intervention. By contrast, throttling methods such as OGM-GE continue to modulate gradients regardless of whether imbalance exists, which can introduce unnecessary perturbation on balanced datasets.
+\paragraph{Adaptive behavior and complementarity.}
+The preferred configuration adapts naturally to the degree of modality imbalance. On high-imbalance data (CREMA-D), boost+OGM-GE is most effective; on the five low-imbalance datasets, boost-only suffices and gradient modulation methods consistently degrade performance (OGM-GE hurts KS by $-1.80$ pp, Twitter15 by $-0.27$ pp, Sarcasm by $-0.59$ pp). This arises from the self-attenuating property: when $\delta$ is small, the boost scales $\bar{s}_m$ remain near unity (Eq.~\ref{eq:boost_scale}), applying minimal intervention. By contrast, throttling methods modulate gradients regardless of whether imbalance exists. The boost+OGM-GE combination consistently matches or exceeds the better of the two individual methods (Table~\ref{tab:main_results}), suggesting that decoupled boosting and coupled throttling operate on complementary aspects of the imbalance problem (Section~\ref{sec:compose}): OGM-GE reduces the dominant modality's gradient magnitude, while the boost amplifies the weaker modality's gradient using an independent monitoring signal.
 
-\paragraph{Complementarity of boosting and throttling.}
-The boost+OGM-GE combination consistently matches or exceeds the better of the two individual methods (Table~\ref{tab:main_results}). On CREMA-D, the combination surpasses both boost-only and OGM-GE alone; on CMU-MOSEI, it matches OGM-GE; on AVE and KS, it falls between OGM-GE and boost-only but remains above the baseline. This suggests that decoupled boosting and coupled throttling operate on complementary aspects of the imbalance problem, as discussed in Section~\ref{sec:compose}: OGM-GE reduces the dominant modality's gradient magnitude, while the boost amplifies the weaker modality's gradient using an independent monitoring signal.
-
-\paragraph{Scaling to multiple modalities and domains.}
-The method scales from two modalities (CREMA-D, AVE, KS, Twitter15, Sarcasm) to three (CMU-MOSEI, CMU-MOSI) and four (BraTS~2021) without modification, and generalizes across four input domains (audio-visual, text-audio-visual, text-image, medical imaging). The probe mechanism naturally extends to $M$ modalities, computing pairwise weakness scores relative to the current strongest modality (Eq.~\ref{eq:weakness}). On BraTS~2021, where four encoders process four MRI sequences, the boost achieves a modest improvement over the baseline with a dense prediction objective (Dice + CE) that differs substantially from the cross-entropy classification loss used in other experiments.
-
-\paragraph{Computational overhead.}
-The primary overhead of probe-guided gradient boosting relative to standard training is the periodic training and evaluation of $M$ linear probes. Because probes operate on detached, fixed-dimensional features and are evaluated only every $K{=}20$ iterations, the additional computation is small: on CREMA-D, the per-epoch wall-clock time increases by approximately 3--5\% relative to the baseline. This overhead is comparable to that of OGM-GE (which computes per-modality gradient norms every iteration) and substantially lower than methods requiring multiple forward passes~\citep{yang2025iprm} or Pareto optimization~\citep{wei2024mmpareto}.
+\paragraph{Scaling and overhead.}
+The method scales from two modalities (CREMA-D, AVE, KS, Twitter15, Sarcasm) to three (CMU-MOSEI, CMU-MOSI) and four (BraTS~2021) without modification, extending the probe mechanism to $M$ modalities via pairwise weakness scores relative to the strongest modality (Eq.~\ref{eq:weakness}). It generalizes across four input domains and, on BraTS~2021, to a dense prediction objective that differs substantially from the classification losses used elsewhere. The primary computational overhead is the periodic training and evaluation of $M$ linear probes on detached features every $K{=}20$ iterations, increasing per-epoch wall-clock time by approximately 3--5\% on CREMA-D. This is comparable to OGM-GE and substantially lower than methods requiring multiple forward passes~\citep{yang2025iprm} or Pareto optimization~\citep{wei2024mmpareto}.
 
 
 %=============================================================================
