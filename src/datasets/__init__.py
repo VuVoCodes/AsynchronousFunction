@@ -7,9 +7,10 @@ from .mosei import MOSEIDataset
 from .cmu_mosi import CMUMOSIDataset
 from .sarcasm import SarcasmDataset
 from .twitter import TwitterDataset
+from .food101 import Food101Dataset
 
 __all__ = [
     "CREMADDataset", "AVEDataset", "KineticsSoundsDataset",
     "MOSEIDataset", "CMUMOSIDataset",
-    "SarcasmDataset", "TwitterDataset",
+    "SarcasmDataset", "TwitterDataset", "Food101Dataset",
 ]

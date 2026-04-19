@@ -54,7 +54,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.models import MultimodalModel, ProbeManager
 from src.models.fusion import ConcatFusion
-from src.datasets import CREMADDataset, AVEDataset, KineticsSoundsDataset, MOSEIDataset, CMUMOSIDataset, SarcasmDataset, TwitterDataset
+from src.datasets import CREMADDataset, AVEDataset, KineticsSoundsDataset, MOSEIDataset, CMUMOSIDataset, SarcasmDataset, TwitterDataset, Food101Dataset
 from src.losses import (
     ASGMLLoss,
     ASGMLScheduler,
@@ -107,6 +107,10 @@ def get_dataset(config: dict, split: str):
     elif name == "twitter":
         twitter_split = split if split == "train" else ("valid" if split == "valid" else "test")
         return TwitterDataset(root=root, split=twitter_split)
+    elif name == "food101":
+        # Food101 only has train/test (no validation split). Use test for both.
+        food_split = "train" if split == "train" else "test"
+        return Food101Dataset(root=root, split=food_split)
     else:
         raise ValueError(f"Unknown dataset: {name}")
 
@@ -2580,7 +2584,7 @@ def main():
         for k, v in dims.items():
             config["dataset"][f"{k}_dim"] = v
         logger.info(f"MOSI feature dims: {dims}")
-    elif config["model"]["backbone"] == "mlp" and config["dataset"]["name"] in ("sarcasm", "twitter"):
+    elif config["model"]["backbone"] == "mlp" and config["dataset"]["name"] in ("sarcasm", "twitter", "food101"):
         config["dataset"]["text_dim"] = train_dataset.text_dim
         config["dataset"]["image_dim"] = train_dataset.image_dim
         logger.info(

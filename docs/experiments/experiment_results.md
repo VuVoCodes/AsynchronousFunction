@@ -1542,3 +1542,71 @@ Text+image datasets confirm the same pattern seen on AVE/KS/MOSEI/MOSI:
 ---
 
 *Last updated: 2026-04-15 (Twitter15 and Sarcasm full sweeps complete. 80 runs total. Boost-only wins on both — consistent low-imbalance pattern.)*
+
+---
+
+## UPMC-Food101 (Text + Image) — Full Sweep (Frozen Features)
+
+**Date:** 2026-04-17 to 2026-04-18
+**Dataset:** UPMC-Food101 (Wang et al., ICME 2015) — 101-class food classification
+**Source:** HuggingFace `coderchen01` mirror via `kkim0451/UPMC-Food101` (mmsd-v1 splits)
+**Splits:** 67,972 train / 22,716 test (standard UPMC-Food101 split)
+**Motivation:** CGGM, MLA, MILES all use Food101. Known HIGH modality imbalance (~16-20pp gap between text and image unimodal accuracy per CGGM paper). Added to test whether our method works on a second high-imbalance benchmark beyond CREMA-D.
+**Setup:** Frozen BERT (768-d) + frozen ResNet18 (512-d) features → MLP encoders (2-layer, 512 hidden, dropout 0.3), concat fusion, Adam lr=1e-3, StepLR step=40, batch 64, 100 epochs. Same pipeline as MOSEI/Sarcasm/Twitter.
+
+### Food101 Multi-Seed Results (frozen features, 5 seeds each)
+
+| Rank | Method | seed42 | seed123 | seed456 | seed789 | seed1024 | **Mean ± Std** | vs Baseline |
+|------|--------|--------|---------|---------|---------|----------|----------------|-------------|
+| 1 | **Baseline** | 85.49 | 85.84 | 85.83 | 85.95 | 85.64 | **85.75 ± 0.16** | — |
+| 2 | MMPareto | 85.80 | 85.23 | 85.78 | 85.87 | 85.73 | **85.68 ± 0.23** | -0.07 |
+| 3 | Boost only (α=0.5) | 85.36 | 85.84 | 85.56 | 85.70 | 85.55 | **85.60 ± 0.16** | -0.15 |
+| 4 | G-Blend | 85.08 | 85.36 | 85.30 | 85.36 | 85.47 | **85.31 ± 0.13** | -0.44 |
+| 5 | OGM-GE | 84.00 | 84.12 | 84.21 | 84.33 | 84.45 | **84.22 ± 0.16** | -1.53 |
+| 6 | AGM (α=1.0) | 83.97 | 84.22 | 83.97 | 84.14 | 84.39 | **84.14 ± 0.16** | -1.61 |
+| 7 | Boost+OGM-GE (α=0.75) | 84.00 | 83.95 | 84.13 | 84.39 | 84.09 | **84.11 ± 0.15** | -1.64 |
+| 8 | CGGM | 48.40 | 48.53 | 48.46 | 48.94 | 48.62 | **48.59 ± 0.19** | -37.16 |
+
+### Food101 Frozen-Features Analysis
+
+1. **No method beats baseline.** Our Boost-only matches baseline (-0.15pp, within noise). Our Boost+OGM-GE loses by -1.64pp (because OGM-GE itself loses).
+
+2. **Gradient throttling methods (OGM-GE, AGM, Boost+OGM-GE) all lose ~1.5pp.** Consistent with the low/medium-imbalance pattern seen on AVE, KS, MOSEI, MOSI, Twitter, Sarcasm. Throttling dominant modality removes signal that MLP head needs.
+
+3. **CGGM collapses to 48.6%** (-37pp) — architecture mismatch (designed for Transformers with auxiliary classifiers, adapted to MLP on frozen features catastrophically fails).
+
+4. **Probe utilization gap grows to ~0.25** during training — confirms high imbalance IS present in the features. But with frozen encoders, gradient modulation can only redistribute MLP head usage, not shape feature learning.
+
+5. **Frozen-features hypothesis confirmed.** Despite Food101 having HIGH modality imbalance (text unimodal ~84%, image unimodal ~68% per CGGM), our method cannot improve baseline because gradients don't flow into BERT/ResNet18 encoders. This matches the broader pattern: our method requires representation learning to work.
+
+### Cross-Dataset Pattern (Updated, 8 datasets)
+
+| Dataset | Feature regime | Imbalance | Our method vs baseline | Verdict |
+|---------|---------------|-----------|------------------------|---------|
+| **CREMA-D 3f** | Trained from scratch | HIGH | **+9.86pp** (B+OGM vs baseline) | ✅ Clear win |
+| BraTS | Pretrained + fine-tuned | MED | +0.72pp | 🟡 Modest win |
+| AVE | Pretrained + fine-tuned | LOW | +0.87pp (Boost) | 🟡 Margin |
+| KS | Pretrained + fine-tuned | LOW | +0.12pp (Boost) | 🟡 Noise |
+| MOSEI | **Frozen** | MED | -0.62pp (Boost) | ❌ Hurts |
+| MOSI | **Frozen** | LOW | -0.53pp (Boost) | ❌ Hurts |
+| Twitter15 | **Frozen** | LOW | +0.25pp (Boost) | 🟡 Noise |
+| Sarcasm | **Frozen** | LOW | +0.04pp (Boost) | 🟡 Noise |
+| **Food101** | **Frozen** | **HIGH** | **-0.15pp (Boost)** | ❌ **No help despite high imbalance** |
+
+**Conclusion**: Method's benefit correlates with **feature-learning activity**, NOT with imbalance level. High imbalance + frozen features → no win (Food101). High imbalance + from-scratch → clear win (CREMA-D).
+
+### Output Locations
+
+| Experiment | Directory |
+|-----------|-----------|
+| Food101 frozen sweep | `outputs/sweep_food101/food101_*_seed{42,123,456,789,1024}/` |
+| Pre-extracted features | `data/Food101/features/{train,test}.pt` |
+| End-to-end test (pending) | `outputs/sweep_food101_e2e/` |
+
+### Next: End-to-End Test (Option A)
+
+Pending test: unfreeze BERT + ResNet18, retrain with Adam encoder LR 2e-5, head LR 1e-3. Hypothesis: if representation learning is the missing ingredient, Boost+OGM-GE should beat baseline by ≥1pp on E2E Food101. See `docs/experiments/ablation_experiment_results.md` for full hypothesis documentation.
+
+---
+
+*Last updated: 2026-04-18 (Food101 frozen-features sweep complete: 40 runs. Hypothesis confirmed for frozen regime — no method beats baseline. End-to-end test pending.)*

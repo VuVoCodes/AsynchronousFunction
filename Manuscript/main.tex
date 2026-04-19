@@ -51,7 +51,7 @@
 
 
 \begin{abstract}
-% TODO: Write abstract after all sections are complete
+Jointly trained multimodal networks frequently underutilize their weaker modalities, as faster-learning modalities dominate the shared fusion objective and suppress the gradient signal reaching slower ones. Most existing remedies address this imbalance by \emph{throttling} the dominant modality's gradient. The natural complement, directly \emph{boosting} the weak modality, has been reported to fail, and we trace this failure to a structural cause, in late-fusion architectures every encoder's gradient shares the loss derivative at the fusion output, so any monitoring signal derived from the joint loss is contaminated by the dominant modality and amplifying the weaker encoder merely scales up a corrupted direction. We propose \emph{probe-guided gradient boosting}, which attaches lightweight linear probes to detached encoder representations to obtain an unbiased per-modality utilization estimate, converts the resulting utilization gap into a bounded EMA-smoothed scaling factor, and applies it to the weaker modality's encoder gradients. The intervention operates only on encoder gradients and requires no modification of the loss or fusion architecture, making it composable with existing throttling methods. We evaluate on eight benchmarks spanning four domains (audio-visual classification, language-audio-visual sentiment regression, text-image classification, and medical image segmentation) and 2 to 4 modalities. On the high-imbalance CREMA-D benchmark, boost+OGM-GE reaches $71.45 \pm 1.71\%$ accuracy, $+9.86$pp over the baseline and $+2.31$pp over OGM-GE alone ($69.14 \pm 1.13\%$). On low-imbalance benchmarks the boost self-attenuates, and the boost-only variant remains within a fraction of a percentage point of baseline, while gradient-modulation baselines more often degrade it. Under standard smoothness and bounded-variance assumptions, we establish three convergence properties: bounded scaling, self-attenuation, and descent.
 \end{abstract}
 
 
@@ -587,29 +587,7 @@ Boost+OGM-GE ($\alpha{=}0.75$) & \textbf{71.45}{\scriptsize$\pm$1.71} & 87.23{\s
 }
 \end{table}
 
-The results reveal a consistent relationship between imbalance severity and the preferred method configuration. On the high-imbalance dataset (CREMA-D), boost+OGM-GE yields $71.45\%$ accuracy ($+9.86$ pp over baseline, $+2.31$ pp over OGM-GE alone), outperforming all baselines including MMPareto ($+5.94$ pp), InfoReg ($+3.73$ pp), and MILES ($+10.40$ pp). Boost-only achieves $62.72\%$ ($+1.13$ pp), confirming that amplifying the weaker modality alone is insufficient when the imbalance is large; combining boosting with throttling provides the necessary two-sided intervention. On the five low-imbalance datasets, a qualitatively different pattern emerges: boost-only consistently preserves or slightly improves baseline performance (e.g., AVE: $87.41\%$, $+0.87$ pp; Twitter15: $66.85\%$, $+0.25$ pp), while gradient modulation baselines frequently degrade it (OGM-GE hurts KS by $-1.80$ pp, Twitter15 by $-0.27$ pp, Sarcasm by $-0.59$ pp). This behavior is consistent with the self-attenuating property of the boost (Section~\ref{sec:boost}): when $\delta$ is small, boost scales approach unity and the intervention vanishes. On the medium-imbalance datasets, both OGM-GE and boost+OGM-GE perform comparably on CMU-MOSEI ($72.47\%$ vs.\ $72.43\%$), suggesting throttling alone captures most available improvement. On BraTS~2021, boost+OGM-GE achieves $86.49\%$ Dice ($+0.72$ pp over baseline), generalizing to dense prediction with a substantially different architecture (DeepLab v3+ with ResNet-101) and loss function without requiring any modification to the probe mechanism. We note that CGGM consistently underperforms the baseline across all benchmarks, likely due to architectural mismatch: it was designed for Transformer-based encoders with attention-based fusion, and these results should not be taken as representative of its performance in its intended setting. Across datasets, we also observe a tendency toward reduced variance with probe-guided boosting (e.g., AVE: $0.26\%$ vs.\ $0.42\%$ baseline std), consistent with the EMA-smoothed probe signal providing a stabilizing effect.
-
-\paragraph{Comparison with OPM.}
-\label{sec:opm_comparison}
-To compare with OPM~\citep{wei2024opm}, which requires a single-layer fusion architecture, we run a separate controlled experiment on CREMA-D (Table~\ref{tab:opm}). Boost+OGM-GE achieves $71.77\%$, outperforming OPM+OGM ($69.84\%$, $+1.93$ pp), OPM alone ($65.43\%$), and OGM alone ($63.74\%$).
-
-\begin{table}[t]
-\centering
-\caption{Comparison with OPM on CREMA-D (3-frame) using OPM's single-layer fusion architecture. Accuracy (\%), mean $\pm$ std over 5 seeds.}
-\label{tab:opm}
-\vspace{0.5em}
-\begin{tabular}{lc}
-\toprule
-\textbf{Method} & \textbf{Accuracy (\%)} \\
-\midrule
-Baseline               & 59.20{\scriptsize$\pm$1.27} \\
-OGM only               & 63.74{\scriptsize$\pm$0.45} \\
-OPM only               & 65.43{\scriptsize$\pm$0.24} \\
-OPM+OGM                & 69.84{\scriptsize$\pm$1.47} \\
-Boost+OGM-GE ($\alpha{=}0.75$) & \textbf{71.77}{\scriptsize$\pm$0.91} \\
-\bottomrule
-\end{tabular}
-\end{table}
+The results reveal a consistent relationship between imbalance severity and the preferred method configuration. On the high-imbalance dataset (CREMA-D), boost+OGM-GE yields $71.45\%$ accuracy ($+9.86$ pp over baseline, $+2.31$ pp over OGM-GE alone), outperforming all baselines including MMPareto ($+5.94$ pp), InfoReg ($+3.73$ pp), and MILES ($+10.40$ pp). Boost-only achieves $62.72\%$ ($+1.13$ pp), confirming that amplifying the weaker modality alone is insufficient when the imbalance is large; combining boosting with throttling provides the necessary two-sided intervention. On the five low-imbalance datasets, a qualitatively different pattern emerges: boost-only consistently preserves or slightly improves baseline performance (e.g., AVE: $87.41\%$, $+0.87$ pp; Twitter15: $66.85\%$, $+0.25$ pp), while gradient modulation baselines frequently degrade it (OGM-GE hurts KS by $-1.80$ pp, Twitter15 by $-0.27$ pp, Sarcasm by $-0.59$ pp). This behavior is consistent with the self-attenuating property of the boost (Section~\ref{sec:boost}): when $\delta$ is small, boost scales approach unity and the intervention vanishes. On the medium-imbalance datasets, both OGM-GE and boost+OGM-GE perform comparably on CMU-MOSEI ($72.47\%$ vs.\ $72.43\%$), suggesting throttling alone captures most available improvement. On BraTS~2021, boost+OGM-GE achieves $86.49\%$ Dice ($+0.72$ pp over baseline), generalizing to dense prediction with a substantially different architecture (DeepLab v3+ with ResNet-101) and loss function without requiring any modification to the probe mechanism. We note that CGGM consistently underperforms the baseline across all benchmarks, likely due to architectural mismatch: it was designed for Transformer-based encoders with attention-based fusion, and these results should not be taken as representative of its performance in its intended setting. Across datasets, we also observe a tendency toward reduced variance with probe-guided boosting (e.g., AVE: $0.26\%$ vs.\ $0.42\%$ baseline std), consistent with the EMA-smoothed probe signal providing a stabilizing effect. We additionally compare against OPM~\citep{wei2024opm}, which requires a single-layer fusion architecture, in Appendix~\ref{app:opm}; boost+OGM-GE outperforms OPM+OGM by $+1.93$ pp under OPM's setup.
 
 
 %---------- 4.3 Ablation Studies ----------
@@ -647,6 +625,38 @@ Reducing the dominant modality's update frequency yields marginal gains ($+0.24$
 \subsection{Analysis}
 \label{sec:analysis}
 
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{figures/probe_accuracy_cremad_posthoc.pdf}
+\caption{Per-modality diagnostics on CREMA-D (5 seeds; post-hoc linear probes trained for 50 epochs on frozen encoder features from each method's final checkpoint). \textbf{(a)} Linear-probe accuracy for audio (strong) and visual (weak) modalities across nine methods; the dotted line at $1/6$ marks random-chance accuracy. AGM and MILES reduce the weak-modality probe to near-chance accuracy despite competitive aggregate performance in Table~\ref{tab:main_results}. \textbf{(b)} Utilization gap $|a_\text{audio} - a_\text{visual}|$; boost+OGM-GE achieves the tightest gap ($2.31$ pp), closing the baseline gap by a factor of $5.4\times$. Error bars: $\pm 1$ standard deviation over seeds.}
+\label{fig:probe_accuracy}
+\end{figure}
+
+\begin{table}[t]
+\centering
+\caption{Post-hoc linear-probe accuracy on CREMA-D (\%, mean $\pm$ std over 5 seeds). Probes are trained for 50 epochs on frozen encoder features from each method's saved \texttt{best\_model.pt}, matching the protocol in Figure~\ref{fig:probe_accuracy}. Gap is the absolute difference of column means.}
+\label{tab:probe_accuracy}
+\vspace{0.5em}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Method} & \textbf{Audio (strong)} & \textbf{Visual (weak)} & \textbf{Gap (pp)} \\
+\midrule
+Baseline                        & 58.66{\scriptsize$\pm$1.60}  & 46.13{\scriptsize$\pm$3.72}  & 12.53 \\
+OGM-GE                          & 58.04{\scriptsize$\pm$1.09}  & 51.67{\scriptsize$\pm$1.85}  & 6.37 \\
+MMPareto                        & 60.03{\scriptsize$\pm$0.73}  & 52.63{\scriptsize$\pm$5.92}  & 7.39 \\
+AGM                             & 55.32{\scriptsize$\pm$0.36}  & 17.72{\scriptsize$\pm$0.73}  & 37.61 \\
+G-Blend                         & 57.77{\scriptsize$\pm$1.78}  & 37.04{\scriptsize$\pm$2.43}  & 20.73 \\
+MILES                           & 59.81{\scriptsize$\pm$1.53}  & 19.62{\scriptsize$\pm$10.42} & 40.19 \\
+InfoReg                         & 60.83{\scriptsize$\pm$0.76}  & \textbf{57.98}{\scriptsize$\pm$1.80}  & 2.85 \\
+Boost only ($\alpha{=}0.5$)     & 57.34{\scriptsize$\pm$2.18}  & 44.60{\scriptsize$\pm$3.96}  & 12.74 \\
+Boost+OGM-GE ($\alpha{=}0.75$)  & 57.85{\scriptsize$\pm$1.03}  & 55.54{\scriptsize$\pm$4.43}  & \textbf{2.31} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Per-modality capacity: boost the weak, don't brake the strong.}
+Aggregate fusion accuracy conflates encoder capacity with fusion-head combination, so we report post-hoc linear-probe accuracy on frozen encoder features from each method's saved checkpoint, trained for 50 epochs over 5 seeds under a shared protocol (Section~\ref{sec:probes}). Figure~\ref{fig:probe_accuracy} and Table~\ref{tab:probe_accuracy} summarize results on CREMA-D across nine methods. Boost+OGM-GE attains a utilization gap of $2.31$ pp (Figure~\ref{fig:probe_accuracy}b), a $5.4\times$ reduction relative to the baseline gap of $12.53$ pp and the smallest of any method evaluated. The narrowing decomposes asymmetrically: the weak (visual) probe rises $+9.41$ pp over baseline ($46.13 \to 55.54$) while the strong (audio) probe falls only $-0.81$ pp ($58.66 \to 57.85$), instantiating the paper's titular claim at the representation level. Among baseline methods, AGM and MILES reduce the visual probe to $17.72\%$ and $19.62\%$ respectively, effectively at random-chance for a 6-class task (Figure~\ref{fig:probe_accuracy}a, chance line at $1/6$); G-Blend also degrades the weak modality ($37.04\%$ visual, $-9.09$ pp vs.\ baseline). These methods obtain their aggregate-accuracy gains by concentrating reliance on the audio modality while the weak encoder's representations collapse, a failure mode invisible in aggregate accuracy and a central contribution of the per-modality diagnostic. InfoReg produces the strongest weak-modality probe ($57.98\%$ visual) but has a wider gap ($2.85$ pp) because it also lifts the audio probe to $60.83\%$; boost+OGM-GE achieves tighter balance through compositional throttling plus boosting rather than by raising both modalities. Honestly, under this fair protocol boost-only alone yields $44.60\%$ visual, marginally below baseline: the visual improvement emerges only when boosting is composed with OGM-GE throttling, confirming the complementarity story (Section~\ref{sec:compose}) at the representation level.
+
 \paragraph{Adaptive behavior and complementarity.}
 The preferred configuration adapts naturally to the degree of modality imbalance. On high-imbalance data (CREMA-D), boost+OGM-GE is most effective; on the five low-imbalance datasets, boost-only suffices and gradient modulation methods consistently degrade performance (OGM-GE hurts KS by $-1.80$ pp, Twitter15 by $-0.27$ pp, Sarcasm by $-0.59$ pp). This arises from the self-attenuating property: when $\delta$ is small, the boost scales $\bar{s}_m$ remain near unity (Eq.~\ref{eq:boost_scale}), applying minimal intervention. By contrast, throttling methods modulate gradients regardless of whether imbalance exists. The boost+OGM-GE combination consistently matches or exceeds the better of the two individual methods (Table~\ref{tab:main_results}), suggesting that decoupled boosting and coupled throttling operate on complementary aspects of the imbalance problem (Section~\ref{sec:compose}): OGM-GE reduces the dominant modality's gradient magnitude, while the boost amplifies the weaker modality's gradient using an independent monitoring signal.
 
@@ -657,10 +667,14 @@ The method scales from two modalities (CREMA-D, AVE, KS, Twitter15, Sarcasm) to 
 %=============================================================================
 % SECTION 5: DISCUSSION & CONCLUSION
 %=============================================================================
-\section{Discussion and conclusion}
+\section{Conclusion}
 \label{sec:conclusion}
 
-% TODO: Write discussion and conclusion
+Joint multimodal training underutilizes weaker modalities because the shared classifier couples every encoder's gradient, letting the dominant modality absorb the fused representation's capacity. We propose probe-guided gradient boosting, which uses decoupled linear probes for an unbiased per-modality utilization estimate and applies a bounded, EMA-smoothed scaling to the weaker modality's gradient. The method is orthogonal to gradient throttling and composes with OGM-GE, MMPareto, AGM, and G-Blend. Under standard assumptions, we establish bounded scaling, self-attenuation as the utilization gap closes, and descent of the joint objective. On CREMA-D, boost+OGM-GE reaches $71.45 \pm 1.71\%$, $+9.86$pp over the baseline and $+2.31$pp over OGM-GE alone.
+
+\paragraph{Limitations.} Under severe imbalance the boost alone is insufficient: boost-only on CREMA-D yields only $+1.13$pp, and the headline gain requires composition with a throttling baseline, indicating that two-sided intervention is necessary in the high-imbalance regime. Although the boost self-attenuates as $\delta \to 0$, we observe small-magnitude regressions in several low-imbalance settings (boost-only on CMU-MOSEI, $-0.62$pp; boost+OGM-GE on Sarcasm, $-0.64$pp; boost+OGM-GE on Kinetics-Sounds, $-1.72$pp), which, while smaller than those of gradient-modulation baselines in these regimes, prevent a universal monotonicity claim. The probe signal is also scope-limited: linear classifiers on pooled features may miss fine-grained or spatially structured information (for BraTS~2021 we reduced the probe target to binary tumor presence as a workaround), and the method presumes trainable encoders, reducing to a constant multiplicative scaling on pipelines that train over pre-extracted frozen features. Finally, our convergence propositions guarantee descent but do not quantify the rate improvement over unmodified SGD; a sharper analysis tying gap closure to probe dynamics is left to future work.
+
+\paragraph{Broader impacts.} The method addresses a general training-dynamics problem and introduces no new data, modalities, or generative capabilities. Downstream societal impact is bounded by that of the underlying applications, and no high-risk model or dataset artifacts are released.
 
 
 %=============================================================================
@@ -803,6 +817,31 @@ where $\Delta_{\loss} = \loss(\theta_0) - \loss^{*}$ and the last inequality use
 
 \paragraph{Interpretation.} Setting $\eta = \Theta(1/(s_{\max}\sqrt{T}))$ yields the rate $\mathcal{O}(s_{\max} \cdot \sigma / \sqrt{T} + s_{\max}^2 \cdot \Delta_{\loss} / T)$. For the default $s_{\max} = 2.0$, the effective variance increases by a factor of at most 4 relative to unmodified SGD. Proposition~\ref{prop:attenuation} guarantees that when modalities are balanced, the boost scales collapse to unity and this overhead vanishes, recovering the standard SGD convergence rate exactly.
 \end{proof}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Comparison with OPM on CREMA-D (3-frame)}
+\label{app:opm}
+
+To compare with OPM~\citep{wei2024opm}, which requires a single-layer fusion architecture, we run a separate controlled experiment on CREMA-D (Table~\ref{tab:opm}). Boost+OGM-GE achieves $71.77\%$, outperforming OPM+OGM ($69.84\%$, $+1.93$ pp), OPM alone ($65.43\%$), and OGM alone ($63.74\%$).
+
+\begin{table}[t]
+\centering
+\caption{Comparison with OPM on CREMA-D (3-frame) using OPM's single-layer fusion architecture. Accuracy (\%), mean $\pm$ std over 5 seeds.}
+\label{tab:opm}
+\vspace{0.5em}
+\begin{tabular}{lc}
+\toprule
+\textbf{Method} & \textbf{Accuracy (\%)} \\
+\midrule
+Baseline               & 59.20{\scriptsize$\pm$1.27} \\
+OGM only               & 63.74{\scriptsize$\pm$0.45} \\
+OPM only               & 65.43{\scriptsize$\pm$0.24} \\
+OPM+OGM                & 69.84{\scriptsize$\pm$1.47} \\
+Boost+OGM-GE ($\alpha{=}0.75$) & \textbf{71.77}{\scriptsize$\pm$0.91} \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
