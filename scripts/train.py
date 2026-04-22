@@ -1392,6 +1392,58 @@ class MinNormSolver:
         return sol_vec, nd
 
 
+def apply_probe_boost_hook(
+    model: nn.Module,
+    modalities: list,
+    probe_manager,
+    scheduler,
+    features: dict,
+    targets,
+    batch_idx: int,
+    config: dict,
+) -> None:
+    """Post-backward plug-and-play hook: probe refresh + multiplicative boost
+    on encoder gradients. Matches the continuous-mode boost used in Table 1
+    Boost+OGM-GE exactly: split-batch probe protocol, EMA scale smoothing,
+    same alpha / s_max / K / mu defaults.
+
+    Must be called AFTER loss.backward() and any method-specific gradient
+    modulation (OGM-GE throttle, AGM exp factor, MMPareto Pareto weights,
+    CGGM magnitude+direction, G-Blend loss weighting), and BEFORE
+    optimizer.step().
+    """
+    K = config["asgml"].get("continuous_eval_freq", 20)
+    probe_steps = config["asgml"].get("continuous_probe_train_steps", 10)
+    alpha = config["asgml"].get("continuous_alpha", 0.5)
+    scale_max = config["asgml"].get("continuous_scale_max", 2.0)
+
+    # Periodic probe refresh (split-batch protocol: train on first half, eval on second)
+    if (batch_idx + 1) % K == 0 and features is not None and targets is not None:
+        batch_size = targets.size(0)
+        split = batch_size // 2
+        if split > 0:
+            train_feat = {m: f[:split] for m, f in features.items()}
+            eval_feat = {m: f[split:] for m, f in features.items()}
+            probe_manager.train_probes(train_feat, targets[:split], num_steps=probe_steps)
+            probe_manager.evaluate_probes(eval_feat, targets[split:])
+            util_scores = probe_manager.get_utilization_scores(use_ema=True)
+            new_scales = scheduler.get_continuous_scales(
+                utilization_scores=util_scores,
+                alpha=alpha,
+                scale_max=scale_max,
+            )
+            scheduler.update_continuous_scales(new_scales)
+
+    # Apply EMA-smoothed boost scales to encoder gradients (every step)
+    for m in modalities:
+        scale = scheduler.current_continuous_scales.get(m, 1.0)
+        if scale == 1.0:
+            continue
+        for name, param in model.named_parameters():
+            if f"encoders.{m}" in name and param.grad is not None:
+                param.grad.data.mul_(scale)
+
+
 def train_epoch_mmpareto(
     model: nn.Module,
     dataloader: DataLoader,
@@ -1402,6 +1454,8 @@ def train_epoch_mmpareto(
     logger,
     writer: SummaryWriter = None,
     gamma: float = 1.5,
+    probe_manager=None,
+    scheduler=None,
 ):
     """Train one epoch with MMPareto (Wei & Hu, ICML 2024).
 
@@ -1512,6 +1566,13 @@ def train_epoch_mmpareto(
                         else:
                             param.grad = new_grad * gamma
 
+        # Plug-and-play boost hook (matches Table 1 Boost+OGM-GE setup exactly)
+        if probe_manager is not None and scheduler is not None:
+            apply_probe_boost_hook(
+                model, list(modalities), probe_manager, scheduler,
+                features, targets, batch_idx, config,
+            )
+
         optimizer.step()
 
         loss_meter.update(total_loss.item())
@@ -1551,6 +1612,8 @@ def train_epoch_agm(
     modulation_start: int = 0,
     modulation_end: int = 50,
     running_scores: dict = None,
+    probe_manager=None,
+    scheduler=None,
 ):
     """Train one epoch with AGM (Li et al., 2023).
 
@@ -1630,6 +1693,13 @@ def train_epoch_agm(
                         if f"encoders.{m}" in name:
                             param.grad.data = param.grad.data * coeffs[m]
 
+        # Plug-and-play boost hook (matches Table 1 Boost+OGM-GE setup exactly)
+        if probe_manager is not None and scheduler is not None:
+            apply_probe_boost_hook(
+                model, m_list, probe_manager, scheduler,
+                features, targets, batch_idx, config,
+            )
+
         optimizer.step()
 
         loss_meter.update(loss.item())
@@ -1664,6 +1734,8 @@ def train_epoch_gblend(
     logger,
     writer: SummaryWriter = None,
     blend_weights: dict = None,
+    probe_manager=None,
+    scheduler=None,
 ):
     """Train one epoch with Grad-Blending / G-Blend (Wang et al., CVPR 2020).
 
@@ -1715,6 +1787,14 @@ def train_epoch_gblend(
         total_loss = fusion_loss + weighted_uni_loss
 
         total_loss.backward()
+
+        # Plug-and-play boost hook (matches Table 1 Boost+OGM-GE setup exactly)
+        if probe_manager is not None and scheduler is not None:
+            apply_probe_boost_hook(
+                model, m_list, probe_manager, scheduler,
+                features, targets, batch_idx, config,
+            )
+
         optimizer.step()
 
         loss_meter.update(total_loss.item())
@@ -1795,6 +1875,8 @@ def train_epoch_cggm(
     logger,
     writer: SummaryWriter = None,
     ogm_ge_config: dict = None,
+    probe_manager=None,
+    scheduler=None,
 ):
     """Train one epoch with CGGM (Guo et al., NeurIPS 2024).
 
@@ -1847,6 +1929,13 @@ def train_epoch_cggm(
         # ========== CGGM Step ==========
         l_gm_value, coeff = cggm.step(model, features, targets, criterion)
 
+        # Plug-and-play boost hook (matches Table 1 Boost+OGM-GE setup exactly)
+        if probe_manager is not None and scheduler is not None:
+            apply_probe_boost_hook(
+                model, list(modalities), probe_manager, scheduler,
+                features, targets, batch_idx, config,
+            )
+
         # ========== Gradient clipping + optimizer step ==========
         torch.nn.utils.clip_grad_norm_(model.parameters(), 0.8)
         optimizer.step()
@@ -1886,6 +1975,8 @@ def train_epoch(
     scaler: GradScaler = None,
     use_amp: bool = False,
     ogm_ge_config: dict = None,
+    probe_stability_log: list = None,
+    probe_stability_loader: DataLoader = None,
 ):
     """
     Train for one epoch with ASGML.
@@ -2094,6 +2185,35 @@ def train_epoch(
             probe_results = probe_manager.evaluate_probes(eval_features, eval_targets)
             utilization_gap = probe_manager.compute_utilization_gap()
             dominant = probe_manager.get_dominant_modality()
+
+            # Probe-stability instrumentation: record batch-raw, EMA-smoothed, and
+            # full-test-set probe accuracy for the estimator-stability appendix.
+            if probe_stability_log is not None and probe_stability_loader is not None:
+                import json as _json  # local to avoid polluting global namespace
+                model.eval()
+                full_feat = {m: [] for m in modalities}
+                full_tgt = []
+                with torch.no_grad():
+                    for _b in probe_stability_loader:
+                        _inp = {m: _b[m].to(device) for m in modalities}
+                        _lbl = _b["label"].to(device)
+                        _, _, _feat = model(_inp, return_features=True)
+                        for m in modalities:
+                            full_feat[m].append(_feat[m].detach().float())
+                        full_tgt.append(_lbl)
+                    full_feat = {m: torch.cat(full_feat[m], dim=0) for m in modalities}
+                    full_tgt = torch.cat(full_tgt, dim=0)
+                    full_results = probe_manager.evaluate_probes(full_feat, full_tgt)
+                model.train()
+                ema_scores = probe_manager.get_utilization_scores(use_ema=True)
+                probe_stability_log.append({
+                    "epoch": int(epoch),
+                    "batch_idx": int(batch_idx),
+                    "iteration": int((epoch - 1) * len(dataloader) + batch_idx),
+                    "batch_raw": {m: float(probe_results[m]["accuracy"]) for m in modalities},
+                    "ema_smoothed": {m: float(ema_scores[m]) for m in modalities},
+                    "full_test": {m: float(full_results[m]["accuracy"]) for m in modalities},
+                })
 
             # ========== Update Scheduler (Adaptive Mode) ==========
             if scheduler.adaptation == "adaptive":
@@ -2392,6 +2512,13 @@ def main():
     parser.add_argument("--epochs", type=int, default=None, help="Override epochs from config")
     parser.add_argument("--lr", type=float, default=None, help="Override learning rate from config")
     parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint to resume from")
+    # Boost composition (plug-and-play, compose probe-guided boost with any method)
+    parser.add_argument("--log-probe-stability", action="store_true",
+                        help="Log per-iteration batch-raw, EMA-smoothed, and full-test probe "
+                             "accuracy to probe_stability.json for the stability appendix.")
+    parser.add_argument("--boost-compose", action="store_true",
+                        help="Enable probe-guided boost composition with a baseline method "
+                             "(--mode gblend | agm | mmpareto | cggm). Uses same setup as Table 1 Boost+OGM-GE.")
     # OGM-GE arguments (orthogonal to ASGML mode)
     parser.add_argument("--ogm-ge", action="store_true",
                         help="Enable OGM-GE gradient modulation (composable with any mode)")
@@ -2945,6 +3072,41 @@ def main():
         writer.close()
         return  # Exit early for ARL mode
 
+    # ========== Boost composition setup for baseline methods ==========
+    # When --boost-compose is set with mode in {cggm, mmpareto, agm, gblend},
+    # instantiate a probe manager + continuous-mode scheduler matching the
+    # Table 1 Boost+OGM-GE setup (alpha/s_max/K/mu from config). The setup is
+    # plug-and-play: the hook multiplies encoder gradients by bar s_m just
+    # before optimizer.step() inside each train_epoch_X.
+    if args.boost_compose and args.mode in ("cggm", "mmpareto", "agm", "gblend"):
+        probe_manager = ProbeManager(
+            modalities=modalities,
+            feature_dim=config["model"]["feature_dim"],
+            num_classes=config["dataset"]["num_classes"],
+            probe_type=config["asgml"].get("probe_type", "linear"),
+            probe_lr=config["asgml"].get("probe_lr", 1e-3),
+            device=device,
+            ema_alpha=config["asgml"].get("probe_ema_alpha", 0.1),
+        )
+        asgml_scheduler = ASGMLScheduler(
+            modalities=modalities,
+            mode="continuous",
+            adaptation="adaptive",
+            tau_base=1.0,
+            tau_min=1.0,
+            tau_max=1.0,
+            threshold_delta=config["asgml"].get("threshold_delta", 0.1),
+            beta=config["asgml"].get("beta", 0.5),
+            lambda_comp=config["asgml"].get("lambda_comp", 0.1),
+        )
+        logger.info(
+            f"Boost composition enabled with {args.mode.upper()}: "
+            f"alpha={config['asgml'].get('continuous_alpha', 0.5)}, "
+            f"s_max={config['asgml'].get('continuous_scale_max', 2.0)}, "
+            f"K={config['asgml'].get('continuous_eval_freq', 20)}, "
+            f"mu={config['asgml'].get('continuous_scale_ema', 0.3)}"
+        )
+
     # ========== OPM Mode: Separate Training Loop ==========
     if args.mode == "cggm":
         logger.info(
@@ -2995,13 +3157,18 @@ def main():
                 device, epoch, config, logger,
                 writer=writer,
                 ogm_ge_config=ogm_ge_config,
+                probe_manager=probe_manager if args.boost_compose else None,
+                scheduler=asgml_scheduler if args.boost_compose else None,
             )
 
             if lr_scheduler is not None:
                 lr_scheduler.step()
 
             # Evaluate
-            test_metrics = evaluate_miles(model, test_loader, device, config)
+            if args.boost_compose:
+                test_metrics = evaluate(model, test_loader, device, config, probe_manager)
+            else:
+                test_metrics = evaluate_miles(model, test_loader, device, config)
 
             log_str = (
                 f"Epoch {epoch}: "
@@ -3010,6 +3177,8 @@ def main():
                 f"Test Acc={test_metrics['accuracy']:.4f}, "
                 f"Test F1={test_metrics['f1_macro']:.4f}"
             )
+            if "utilization_gap" in test_metrics:
+                log_str += f", Util Gap={test_metrics['utilization_gap']:.4f}"
             logger.info(log_str)
 
             writer.add_scalar("test/accuracy", test_metrics["accuracy"], epoch)
@@ -3169,12 +3338,17 @@ def main():
                 model, train_loader, optimizer, device, epoch, config, logger,
                 writer=writer,
                 gamma=args.mmpareto_gamma,
+                probe_manager=probe_manager if args.boost_compose else None,
+                scheduler=asgml_scheduler if args.boost_compose else None,
             )
 
             if lr_scheduler is not None:
                 lr_scheduler.step()
 
-            test_metrics = evaluate_miles(model, test_loader, device, config)
+            if args.boost_compose:
+                test_metrics = evaluate(model, test_loader, device, config, probe_manager)
+            else:
+                test_metrics = evaluate_miles(model, test_loader, device, config)
 
             log_str = (
                 f"Epoch {epoch}: "
@@ -3183,6 +3357,8 @@ def main():
                 f"Test Acc={test_metrics['accuracy']:.4f}, "
                 f"Test F1={test_metrics['f1_macro']:.4f}"
             )
+            if "utilization_gap" in test_metrics:
+                log_str += f", Util Gap={test_metrics['utilization_gap']:.4f}"
             logger.info(log_str)
 
             writer.add_scalar("test/accuracy", test_metrics["accuracy"], epoch)
@@ -3236,12 +3412,17 @@ def main():
                 modulation_start=args.agm_modulation_start,
                 modulation_end=args.agm_modulation_end,
                 running_scores=running_scores,
+                probe_manager=probe_manager if args.boost_compose else None,
+                scheduler=asgml_scheduler if args.boost_compose else None,
             )
 
             if lr_scheduler is not None:
                 lr_scheduler.step()
 
-            test_metrics = evaluate_miles(model, test_loader, device, config)
+            if args.boost_compose:
+                test_metrics = evaluate(model, test_loader, device, config, probe_manager)
+            else:
+                test_metrics = evaluate_miles(model, test_loader, device, config)
 
             log_str = (
                 f"Epoch {epoch}: "
@@ -3250,6 +3431,8 @@ def main():
                 f"Test Acc={test_metrics['accuracy']:.4f}, "
                 f"Test F1={test_metrics['f1_macro']:.4f}"
             )
+            if "utilization_gap" in test_metrics:
+                log_str += f", Util Gap={test_metrics['utilization_gap']:.4f}"
             logger.info(log_str)
 
             writer.add_scalar("test/accuracy", test_metrics["accuracy"], epoch)
@@ -3297,12 +3480,17 @@ def main():
                 model, train_loader, optimizer, device, epoch, config, logger,
                 writer=writer,
                 blend_weights=blend_weights,
+                probe_manager=probe_manager if args.boost_compose else None,
+                scheduler=asgml_scheduler if args.boost_compose else None,
             )
 
             if lr_scheduler is not None:
                 lr_scheduler.step()
 
-            test_metrics = evaluate_miles(model, test_loader, device, config)
+            if args.boost_compose:
+                test_metrics = evaluate(model, test_loader, device, config, probe_manager)
+            else:
+                test_metrics = evaluate_miles(model, test_loader, device, config)
 
             # Compute blend weights for next epoch from OG ratios
             blend_weights = compute_gblend_weights(
@@ -3316,6 +3504,8 @@ def main():
                 f"Test Acc={test_metrics['accuracy']:.4f}, "
                 f"Test F1={test_metrics['f1_macro']:.4f}"
             )
+            if "utilization_gap" in test_metrics:
+                log_str += f", Util Gap={test_metrics['utilization_gap']:.4f}"
             logger.info(log_str)
 
             writer.add_scalar("test/accuracy", test_metrics["accuracy"], epoch)
@@ -3401,6 +3591,21 @@ def main():
             lambda_comp=config["asgml"]["lambda_comp"],
             max_staleness_ratio=config["asgml"].get("max_staleness_ratio", 3.0),
         )
+    else:
+        # Baseline method modes (gblend, agm, mmpareto, cggm, ...).
+        # If --boost-compose is set, use a continuous-mode scheduler matching
+        # the Table 1 Boost+OGM-GE setup (alpha/s_max/K/mu from config).
+        asgml_scheduler = ASGMLScheduler(
+            modalities=modalities,
+            mode="continuous",
+            adaptation="adaptive",
+            tau_base=1.0,
+            tau_min=1.0,
+            tau_max=1.0,
+            threshold_delta=config["asgml"].get("threshold_delta", 0.1),
+            beta=config["asgml"].get("beta", 0.5),
+            lambda_comp=config["asgml"].get("lambda_comp", 0.1),
+        )
 
     # Create probe manager
     probe_manager = ProbeManager(
@@ -3455,6 +3660,12 @@ def main():
             f"modulation=[{args.modulation_start}, {args.modulation_end}]"
         )
 
+    # Probe-stability instrumentation (appendix B.6 validation experiment).
+    # When --log-probe-stability is set, record batch-raw / EMA-smoothed /
+    # full-test probe accuracy at each probe-eval checkpoint for later plotting.
+    probe_stability_log = [] if args.log_probe_stability else None
+    probe_stability_loader = test_loader if args.log_probe_stability else None
+
     # Training loop
     for epoch in range(start_epoch, config["training"]["epochs"] + 1):
         # Reset ASGML state at start of epoch (optional - can also persist)
@@ -3464,7 +3675,9 @@ def main():
         train_metrics = train_epoch(
             model, train_loader, optimizer, loss_fn, asgml_scheduler,
             probe_manager, device, epoch, config, logger, writer,
-            scaler=scaler, use_amp=use_amp, ogm_ge_config=ogm_ge_config
+            scaler=scaler, use_amp=use_amp, ogm_ge_config=ogm_ge_config,
+            probe_stability_log=probe_stability_log,
+            probe_stability_loader=probe_stability_loader,
         )
 
         # Evaluate
@@ -3525,6 +3738,14 @@ def main():
             if scaler is not None:
                 checkpoint_data["scaler_state_dict"] = scaler.state_dict()
             torch.save(checkpoint_data, output_dir / f"checkpoint_epoch{epoch}.pt")
+
+    # Probe-stability log dump (appendix B.6 validation)
+    if probe_stability_log is not None and len(probe_stability_log) > 0:
+        import json as _json
+        stab_path = output_dir / "probe_stability.json"
+        with open(stab_path, "w") as _f:
+            _json.dump(probe_stability_log, _f, indent=2)
+        logger.info(f"Probe stability log written to {stab_path} ({len(probe_stability_log)} checkpoints)")
 
     # Final summary
     logger.info(f"Training complete. Best accuracy: {best_acc:.4f}")
