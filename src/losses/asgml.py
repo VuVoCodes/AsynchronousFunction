@@ -306,6 +306,7 @@ class ASGMLScheduler:
         beta: float = 0.5,
         lambda_comp: float = 0.1,  # Gradient compensation factor
         max_staleness_ratio: float = 3.0,  # κ: max ratio between modality staleness values
+        continuous_scale_ema: float = 0.3,  # μ: EMA coefficient for boost-scale smoothing
     ):
         """
         Args:
@@ -360,7 +361,7 @@ class ASGMLScheduler:
 
         # Continuous mode: EMA-smoothed gradient scales per modality
         self.current_continuous_scales: Dict[str, float] = {m: 1.0 for m in modalities}
-        self.continuous_scale_ema: float = 0.3
+        self.continuous_scale_ema: float = continuous_scale_ema
 
     def set_dominant_modality(self, modality: str) -> None:
         """

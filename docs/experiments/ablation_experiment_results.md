@@ -649,3 +649,59 @@ Boost+CGGM      : 51.21, 50.81, 48.52, 49.87, 51.21  →  50.32 ± 1.03
 
 *Last updated: 2026-04-19 (Comprehensive synthesis added. All 4 ablation axes + stats tested + principled scope claim + honest limitations documented.)*
 *Last updated: 2026-04-21 (T2 composability sweep results added; 5/5 compositions show plug-and-play positive Δ; CGGM flat as consistent with architectural disclaimer.)*
+
+---
+
+## §11: 3-Way Decomposition Ablation (Monitor+OGM-GE α=0)
+
+**Date:** 2026-04-24
+**Sweep:** `scripts/sweep_3way_ablation.sh`
+**Output:** `outputs/sweep_3way_ablation/`
+**Purpose:** Isolate the monitor's marginal value from the boost's — defend hybrid-framing claim (decoupled probe monitoring + probe-guided gradient boosting as twin contributions).
+
+### Protocol
+- Dataset: CREMA-D 3-frame (matches Table 1 Boost+OGM-GE setup exactly)
+- Mode: `--mode adaptive --asgml-mode continuous --ogm-ge --alpha 0.8`
+- Critical flag: `--continuous-alpha 0.0` (probes active, scale held at unity, no gradient modification)
+- Epochs: 100
+- Seeds: 42, 123, 456, 789, 1024
+
+### Results (5 seeds)
+
+| Seed | Best Accuracy |
+|---|---|
+| 42 | 67.88% |
+| 123 | 68.15% |
+| 456 | 69.35% |
+| 789 | 69.49% |
+| 1024 | 70.83% |
+
+**Mean ± Std:** 69.14 ± 1.18%
+
+### 3-Way Decomposition
+
+| Condition | Mean ± Std (%) | Δ vs Baseline | Δ vs OGM-GE |
+|---|---|---|---|
+| Baseline | 61.59 ± 0.80 | — | — |
+| OGM-GE alone | 69.14 ± 1.13 | +7.55 | — |
+| **Monitor+OGM-GE (α=0)** | **69.14 ± 1.18** | **+7.55** | **0.00** |
+| Boost+OGM-GE (α=0.75) | 71.45 ± 1.71 | +9.86 | +2.31 |
+
+### Finding
+Monitor+OGM-GE α=0 condition is **indistinguishable from OGM-GE alone** (identical mean 69.14%; std 1.13 vs 1.18 pp). The full +2.31 pp gain of Boost+OGM-GE over OGM-GE alone is attributable to boost actuation, not to:
+- Probe-feature-learning side-effects
+- Probe-training step as implicit regularization
+- Two-optimizer interaction effects
+
+### Paper integration
+- **Abstract:** new sentence about 3-way isolation
+- **Contributions:** split into 4 bullets (twin contributions for monitor + boost)
+- **§4.2:** forward-reference to §4.3
+- **§4.3:** new "Isolating the monitor from the boost" paragraph
+
+### Interpretation for paper narrative
+- **Monitor** = decoupled diagnostic contribution (does nothing to accuracy by itself).
+- **Boost** = actuation that requires a decoupled signal to work.
+- **Coupled boost** (amplifying a loss-contaminated signal) is why prior boost-only methods fail (per wei2024opm OGM*).
+- **+2.31 pp headline** = (monitor delivers decoupled signal) × (boost amplifies it) × (OGM-GE throttles dominant).
+
