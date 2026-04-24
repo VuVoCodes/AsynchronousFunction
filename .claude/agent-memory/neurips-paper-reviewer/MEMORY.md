@@ -1,4 +1,5 @@
 - [Review 2026-04-23 pass](review_20260423.md) — First formal review after async→boost pivot, scores and key recurring risks
+- [Review 2026-04-24 Appendix B pass](review_20260424_appendixB.md) — Post-rework appendix-only findings: "never-hurts" remnant, semicolons, dataset URLs
 - [Meta-reviewer risks](project_meta_reviewer_risks.md) — Likely AC/SAC objections to anticipate in rebuttal
 - [CGGM/AGM reproduction anomalies](project_baseline_anomalies.md) — Baseline accuracy mismatches vs. published numbers, needs defense
 - [Scope-of-generality tension](project_scope_tension.md) — Headline +2.31 pp is one-dataset-one-combination, needs honest framing
