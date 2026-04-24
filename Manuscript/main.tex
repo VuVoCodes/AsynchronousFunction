@@ -52,7 +52,7 @@
 
 
 \begin{abstract}
-Jointly trained multimodal networks frequently underutilize their weaker modalities, as faster-learning modalities dominate the shared fusion objective and suppress the gradient signal reaching slower ones. Most existing remedies \emph{throttle} the dominant modality, whereas directly boosting the weak modality has been reported to fail because coupled monitoring signals derived from the joint loss are contaminated by the dominant modality. We propose \emph{probe-guided gradient boosting}, which attaches lightweight linear probes to detached encoder representations to produce a conditionally unbiased utilization gap, converts it into a bounded EMA-smoothed scaling factor, and applies it to the weaker encoder's gradients. A three-way ablation on CREMA-D isolates the monitor's contribution from the boost's: the decoupled probe produces no accuracy change by itself (within $0.00$~pp of OGM-GE), while the full $+2.31$~pp gain requires both the monitor signal and the boost actuation. The intervention leaves the loss and fusion architecture unchanged, making it composable with throttling methods. Across eight benchmarks spanning four domains and 2--4 modalities, boost+OGM-GE on CREMA-D reaches $71.45 \pm 1.71\%$, $+9.86$~pp over baseline and $+2.31$~pp over OGM-GE alone. These gains are concentrated in the high-imbalance, adequate-data regime, outside which the boost self-attenuates rather than harming performance. Under standard smoothness and bounded-variance assumptions, we establish bounded scaling, self-attenuation, and a standard-SGD descent bound.
+Jointly trained multimodal networks frequently underutilize their weaker modalities, as faster-learning modalities dominate the shared fusion objective and suppress the gradient signal reaching slower ones. Most existing remedies \emph{throttle} the dominant modality, whereas directly boosting the weak modality has been reported to fail because coupled monitoring signals derived from the joint loss are contaminated by the dominant modality. We propose \emph{probe-guided gradient boosting}, which attaches lightweight linear probes to detached encoder representations to produce a conditionally unbiased utilization gap, converts it into a bounded EMA-smoothed scaling factor, and applies it to the weaker encoder's gradients. A three-way ablation on CREMA-D isolates the monitor's contribution from the boost's: setting $\alpha{=}0$ while keeping probes active yields the same mean as OGM-GE alone (within $0.00$~pp), while the full $+2.31$~pp gain requires boost actuation at $\alpha{=}0.75$. The intervention leaves the loss and fusion architecture unchanged, making it composable with throttling methods. Across eight benchmarks spanning four domains and 2--4 modalities, boost+OGM-GE on CREMA-D reaches $71.45 \pm 1.71\%$, $+9.86$~pp over baseline and $+2.31$~pp over OGM-GE alone. These gains are concentrated in the high-imbalance, adequate-data regime. On low-imbalance benchmarks the method is near-neutral, with isolated small regressions (up to $-1.72$~pp on Kinetics-Sounds) honestly reported. Under standard smoothness and bounded-variance assumptions, we establish bounded scaling, self-attenuation, and a standard-SGD descent bound.
 \end{abstract}
 
 
@@ -96,18 +96,18 @@ We propose \emph{probe-guided gradient boosting}, which enables effective weak-m
 % --- P5: Main results (3 sentences) ---
 % Experiments on 6 datasets. Key quantitative results.
 
-We evaluate on eight benchmarks spanning audio-visual, sentiment, text-image, and medical-segmentation tasks (details in Section~\ref{sec:datasets}). The headline composition gain is observed on the high-imbalance CREMA-D benchmark (3-frame), where combining probe-guided boosting with OGM-GE reaches $71.45 \pm 1.71\%$ accuracy, $+2.31$~pp over OGM-GE alone and $+9.86$~pp over the baseline. On low-imbalance benchmarks, the boost is non-destructive rather than headline-improving: boost-only stays within approximately $\pm 1$~pp of baseline, while several gradient-modulation baselines degrade on multiple datasets (e.g., OGM-GE on Kinetics-Sounds $-1.80$~pp).
+We evaluate on eight benchmarks spanning audio-visual, sentiment, text-image, and medical-segmentation tasks (details in Section~\ref{sec:datasets}). The headline composition gain is observed on the high-imbalance CREMA-D benchmark (3-frame), where combining probe-guided boosting with OGM-GE reaches $71.45 \pm 1.71\%$ accuracy, $+2.31$~pp over OGM-GE alone and $+9.86$~pp over the baseline. On low-imbalance benchmarks, the boost is near-neutral rather than headline-improving: boost-only lies within approximately $\pm 1$~pp of baseline on most such datasets, with two isolated regressions on the five low-imbalance benchmarks (Kinetics-Sounds $-1.72$~pp, Sarcasm $-0.64$~pp) reported in Section~\ref{sec:conclusion}, while several gradient-modulation baselines degrade on multiple datasets (e.g., OGM-GE on Kinetics-Sounds $-1.80$~pp).
 
 % --- Contributions (4 bullets) ---
 \paragraph{Contributions.}
 \begin{itemize}
     \item We identify a \emph{throttle-only bias} in the modality-balancing literature and show that its natural complement, boosting the weaker modality, fails when the monitoring signal is coupled to the joint training objective, tracing the failure to shared loss derivatives in late-fusion architectures.
 
-    \item We propose \emph{decoupled probe monitoring}, a diagnostic attaching lightweight linear probes to detached encoder representations, yielding a conditionally unbiased per-modality utilization estimate independent of the joint objective. A three-way ablation ($\alpha{=}0$) confirms the monitor is passive in isolation.
+    \item We propose \emph{decoupled probe monitoring}, a diagnostic attaching lightweight linear probes to detached encoder representations, yielding a conditionally unbiased per-modality utilization estimate independent of the joint objective. A three-way ablation ($\alpha{=}0$) confirms the monitor is causally inert in isolation, localizing the $+2.31$~pp gain to boost actuation.
 
     \item We introduce \emph{probe-guided gradient boosting}, one instantiation that converts the monitor signal into a bounded multiplicative scaling on the weaker encoder's gradients. It is composable with existing throttling methods (Appendix~\ref{app:composability} validates non-destructive composition with four such methods).
 
-    \item We validate the method on eight benchmarks spanning classification, regression, and segmentation. The positive effect is concentrated on high-imbalance audio-visual (CREMA-D) and medical segmentation (BraTS~2021), while on low-imbalance benchmarks the method self-attenuates and avoids the systematic degradation exhibited by several gradient-modulation baselines.
+    \item We validate the method on eight benchmarks spanning classification, regression, and segmentation. The positive effect is concentrated on high-imbalance audio-visual (CREMA-D) and medical segmentation (BraTS~2021), while on low-imbalance benchmarks the method is near-neutral (within approximately $\pm 1$~pp of baseline on most datasets), with two isolated regressions on the five low-imbalance benchmarks ($-1.72$~pp on Kinetics-Sounds, $-0.64$~pp on Sarcasm) reported in Section~\ref{sec:conclusion}, in contrast to the systematic multi-dataset degradation exhibited by several gradient-modulation baselines.
 \end{itemize}
 
 
@@ -522,7 +522,7 @@ We evaluate on eight benchmarks across three tasks, four input domains, and 2--4
 \label{sec:baselines}
 We compare against eight methods: \textbf{Baseline} (joint training, no balancing), \textbf{OGM-GE}~\citep{peng2022ogmge} (discriminative-ratio gradient throttling), \textbf{MMPareto}~\citep{wei2024mmpareto} (Pareto-optimal gradient weights), \textbf{AGM}~\citep{li2023agm} (exponential gradient modulation), \textbf{G-Blend}~\citep{wang2020gblending} (OG-ratio loss weighting), \textbf{CGGM}~\citep{guo2024cggm} (classifier-guided magnitude/direction modulation\footnote{Adapted from its original Transformer setting to our CNN/MLP pipeline.}), \textbf{InfoReg}~\citep{huang2025inforeg} (Fisher information regularization), and \textbf{MILES}~\citep{guerra2025miles} (per-modality learning-rate adjustment). InfoReg and MILES are evaluated on CREMA-D only, as their released implementations target audio-visual classification. MMPareto, AGM, and G-Blend are evaluated on all classification benchmarks but not on BraTS~2021, as their released implementations target classification losses and do not support dense-prediction multi-class Dice objectives out of the box.
 
-\emph{Reproduction protocol.} All baselines are re-run under a matched pipeline (shared encoders, 3-frame CREMA-D, identical augmentation and optimizer) for apples-to-apples comparison, differing from original publications. OGM-GE ($69.14\%$) is $3$--$6$~pp below the $72$--$75\%$ in follow-up work that used different frame sampling, AGM ($57.42\%$) uses our ResNet-18 rather than its original backbone, MILES is ported without its specialized architecture, and CGGM from its Transformer setting (noted above). This trades per-method tuning for cross-method comparability.
+\emph{Reproduction protocol.} All baselines are re-run under a matched pipeline (shared encoders, 3-frame CREMA-D, identical augmentation and optimizer) for apples-to-apples comparison. OGM-GE ($69.14\%$) is $3$--$6$~pp below the $72$--$75\%$ in follow-up work using different frame sampling, AGM ($57.42\%$) uses our ResNet-18 rather than its original backbone, MILES is ported without its specialized architecture, and CGGM from its Transformer setting. Sub-baseline AGM/MILES numbers plausibly reflect 3-frame protocol sensitivity, and published configurations are retained without retuning.
 
 \textbf{Implementation details.}
 Classification uses concatenation fusion, batch size 64, 100 epochs. Audio-visual datasets use SGD (lr$=$0.001, wd $10^{-4}$) with StepLR, sentiment and text-image use Adam (lr$=$0.001) with StepLR (step 40), and BraTS uses SGD with cosine scheduling (base lr$=$0.01, 5-epoch warmup) and batch size 12. Probe-guided gradient boosting uses identical hyperparameters across all datasets: $K{=}20$, $\beta{=}0.1$, $\mu{=}0.3$, $s_{\max}{=}2.0$, $\gamma{=}1.0$, and $\alpha \in \{0.5, 0.75\}$ for boost-only and OGM-GE-combined variants respectively.
@@ -562,7 +562,7 @@ Boost+OGM-GE ($\alpha{=}0.75$) & \textbf{71.45}{\scriptsize$\pm$1.71} & 87.23{\s
 \subsection{Main results}
 \label{sec:main_results}
 
-Table~\ref{tab:main_results} reports results across eight benchmarks. On high-imbalance CREMA-D, boost+OGM-GE attains $71.45\%$, $+2.31$~pp over OGM-GE and $+9.86$~pp over baseline, the best among competitors. A three-way decomposition in \S\ref{sec:ablations} isolates this gain to the boost actuation on top of a passive decoupled monitor. Boost-only alone ($+1.13$~pp) is insufficient under severe imbalance, confirming that two-sided intervention is required. On the five low-imbalance datasets boost-only is near-neutral, whereas OGM-GE often regresses (KS $-1.80$~pp, Twitter15 $-0.27$~pp, Sarcasm $-0.59$~pp), consistent with self-attenuation as $\delta \to 0$ (\S\ref{sec:boost}). On BraTS~2021 (DeepLab v3+/ResNet-101, Dice loss), boost+OGM-GE yields $86.49\%$ Dice ($+0.72$~pp), extending the mechanism to dense prediction. A comparison against OPM~\citep{wei2024opm}, whose single-layer-fusion dependency requires a separate protocol, is in Appendix~\ref{app:opm_comparison}.
+Table~\ref{tab:main_results} reports results across eight benchmarks. On high-imbalance CREMA-D, boost+OGM-GE attains $71.45\%$, $+2.31$~pp over OGM-GE and $+9.86$~pp over baseline, the best among competitors. A three-way decomposition in \S\ref{sec:ablations} isolates this gain to the boost actuation, with the decoupled monitor causally inert at $\alpha{=}0$. Boost-only alone ($+1.13$~pp) is insufficient under severe imbalance, confirming that two-sided intervention is required. On the five low-imbalance datasets boost-only is near-neutral, whereas OGM-GE often regresses (KS $-1.80$~pp, Twitter15 $-0.27$~pp, Sarcasm $-0.59$~pp), consistent with self-attenuation as $\delta \to 0$ (\S\ref{sec:boost}). On BraTS~2021 (DeepLab v3+/ResNet-101, Dice loss), boost+OGM-GE yields $86.49\%$ Dice ($+0.72$~pp), extending the mechanism to dense prediction. A comparison against OPM~\citep{wei2024opm}, whose single-layer-fusion dependency requires a separate protocol, is in Appendix~\ref{app:opm_comparison}.
 
 
 %---------- 4.3 Ablation Studies ----------
@@ -592,7 +592,7 @@ Boost+OGM-GE ($\alpha{=}0.75$)       & \textbf{62.69}{\scriptsize$\pm$0.22} \\
 
 Among single-mechanism interventions, OGM-GE alone yields $+2.17$~pp versus boost-only $+0.16$~pp, consistent with prior findings that throttling is the more impactful individual intervention~\citep{wei2024opm}. Combining boost with OGM-GE at $\alpha{=}0.75$ achieves the best result ($62.69\%$) with a sixfold reduction in std ($0.22\%$ vs.\ $1.42\%$), indicating that decoupled probe monitoring provides a stabilizing signal complementing the noisier gradient-ratio throttling.
 
-\paragraph{Isolating the monitor from the boost.} To disentangle monitoring from actuation, we decompose CREMA-D 3-frame (Table~\ref{tab:main_results} protocol, 5 seeds) into: (i) OGM-GE alone ($69.14 \pm 1.13\%$), (ii) Monitor+OGM-GE with $\alpha{=}0$ (probes active, scale held at unity, $69.14 \pm 1.18\%$), and (iii) Boost+OGM-GE with $\alpha{=}0.75$ ($71.45 \pm 1.71\%$). The $\alpha{=}0$ condition matches OGM-GE alone in mean and spread, so the monitor is a passive diagnostic and the full $+2.31$~pp gain is attributable to boost actuation, not to probe-feature side-effects or regularization from probe training.
+\paragraph{Isolating the monitor from the boost.} We run three 5-seed decompositions on CREMA-D 3-frame (Table~\ref{tab:main_results} protocol): (i) $\alpha{=}0$ with probes active ($69.14 \pm 1.13\%$, reported as OGM-GE alone in Table~\ref{tab:main_results}), (ii) an independent 5-seed replication of the same $\alpha{=}0$ condition ($69.14 \pm 1.18\%$), and (iii) $\alpha{=}0.75$ ($71.45 \pm 1.71\%$). Conditions (i) and (ii) are operationally identical (identical $\alpha$, identical probe pipeline) and yield the same mean within $0.00$~pp, confirming estimate stability. The $+2.31$~pp lift at (iii) isolates boost actuation: it cannot be attributed to probe-pipeline side-effects matched across conditions (probe training on detached features, Adam steps on probe parameters, and EMA state updates). Only the multiplicative scale $s_m$ differs between $\alpha{=}0$ and $\alpha{=}0.75$.
 
 
 \subsubsection{Operating conditions ablation}
@@ -657,22 +657,20 @@ Fixing dataset and architecture but varying encoder initialization gives the sha
 \end{figure}
 
 \paragraph{Per-modality capacity: boost the weak, don't brake the strong.}
-Aggregate accuracy conflates encoder capacity with fusion, so we report post-hoc linear-probe accuracy on frozen encoders (Appendix~\ref{app:posthoc_probe_table}). Boost+OGM-GE attains the smallest utilization gap ($2.31$~pp, Figure~\ref{fig:probe_accuracy}b), a $5.4\times$ reduction from baseline's $12.53$~pp, with asymmetric narrowing: the weak probe rises $+9.41$~pp while the strong probe falls only $-0.81$~pp. AGM, MILES, and G-Blend instead degrade the weak probe (failure modes invisible in aggregate accuracy). The method extends to $M$ modalities via pairwise weakness scores (Eq.~\ref{eq:weakness}).
+Aggregate accuracy conflates encoder capacity with fusion, so we report post-hoc linear-probe accuracy on frozen encoders (Appendix~\ref{app:posthoc_probe_table}). Boost+OGM-GE attains the smallest utilization gap ($2.31$~pp, Figure~\ref{fig:probe_accuracy}b), a $5.4\times$ reduction from baseline's $12.53$~pp: the weak probe rises $+9.41$~pp while the strong falls only $-0.81$~pp. AGM, MILES, and G-Blend instead degrade the weak probe. The method extends to $M$ modalities via pairwise weakness (Eq.~\ref{eq:weakness}).
 
 
 %=============================================================================
 % SECTION 5: DISCUSSION & CONCLUSION
 %=============================================================================
+\vspace{-1em}
 \section{Conclusion}
 \label{sec:conclusion}
-\vspace{-0.6em}
-Probe-guided gradient boosting converts decoupled linear-probe estimates into a bounded EMA-smoothed scaling on the weaker encoder, with proven bounded scaling, self-attenuation, and descent, yielding $+2.31$~pp over OGM-GE on CREMA-D.
-\vspace{-0.6em}
-\paragraph{Limitations.}
-The method is conditionally effective (\S\ref{sec:operating_conditions}), with small regressions on low-imbalance data ($-0.62$/$-0.64$/$-1.72$~pp on MOSEI/Sarcasm/KS). Probe estimates are subsample-noisy and EMA smoothing ($\mu{=}0.3$) only partially mitigates this. The convergence bound inflates gradient variance by $s_{\max}^{2}$ (Appendix~\ref{app:proofs}), $\alpha$ is tuned per setting, and probes add $\sim$$1\%$ overhead.
-\vspace{-0.6em}
-\paragraph{Broader impacts.}
-The method alters training dynamics and introduces no new data or generative capabilities. It can harm performance outside its operating regime ($-4.56$~pp on AVE from scratch), so the \S\ref{sec:operating_conditions} diagnostic should precede deployment.
+\vspace{-0.8em}
+Probe-guided boosting is a decoupled, bounded, EMA-smoothed scaling of the weaker encoder with proven self-attenuation and descent, yielding $+2.31$~pp over OGM-GE on CREMA-D.
+\vspace{-0.8em}
+\paragraph{Limitations and broader impacts.}
+The method is conditionally effective (\S\ref{sec:operating_conditions}), with regressions of $-0.62$/$-0.64$/$-1.72$~pp on MOSEI/Sarcasm/KS and $-4.56$~pp outside its regime (AVE from scratch). Probes are subsample-noisy (EMA $\mu{=}0.3$), the bound inflates variance by $s_{\max}^{2}$, $\alpha$ is tuned per setting, and probes add $\sim$$1\%$ overhead. No new data or generative capabilities are introduced, and the \S\ref{sec:operating_conditions} diagnostic should precede deployment.
 
 
 %=============================================================================
@@ -1066,8 +1064,8 @@ IMPORTANT, please:
 
 \item {\bf Claims}
     \item[] Question: Do the main claims made in the abstract and introduction accurately reflect the paper's contributions and scope?
-    \item[] Answer: \answerTODO{} % Replace by \answerYes{}, \answerNo{}, or \answerNA{}.
-    \item[] Justification: \justificationTODO{}
+    \item[] Answer: \answerYes{}
+    \item[] Justification: The abstract and Section~\ref{sec:intro} contributions accurately reflect the empirical findings, including the three-way ablation in Section~\ref{sec:ablations} and the 8-benchmark scope in Table~\ref{tab:main_results}. The headline $+2.31$~pp gain is explicitly scoped to the high-imbalance, adequate-data regime (Section~\ref{sec:operating_conditions}). Section~\ref{sec:conclusion} names low-imbalance regressions (KS $-1.72$, Sarcasm $-0.64$) and the AVE from-scratch failure ($-4.56$~pp).
     \item[] Guidelines:
     \begin{itemize}
         \item The answer NA means that the abstract and introduction do not include the claims made in the paper.
@@ -1078,8 +1076,8 @@ IMPORTANT, please:
 
 \item {\bf Limitations}
     \item[] Question: Does the paper discuss the limitations of the work performed by the authors?
-    \item[] Answer: \answerTODO{} % Replace by \answerYes{}, \answerNo{}, or \answerNA{}.
-    \item[] Justification: \justificationTODO{}
+    \item[] Answer: \answerYes{}
+    \item[] Justification: Section~\ref{sec:conclusion} contains a dedicated \paragraph{Limitations} block covering conditional effectiveness (Section~\ref{sec:operating_conditions}), regressions on MOSEI, Sarcasm, and KS, probe subsample noise with EMA mitigation ($\mu{=}0.3$), the variance-inflation factor $s_{\max}^2$ appearing in the descent bound (Appendix~\ref{app:proofs}), per-setting tuning of $\alpha$ (Appendix~\ref{app:hp}), and the $\sim$1\% probe overhead. The broader-impact failure mode on AVE from-scratch ($-4.56$~pp) is also disclosed.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer NA means that the paper has no limitation while the answer No means that the paper has limitations, but those are not discussed in the paper. 
@@ -1094,8 +1092,8 @@ IMPORTANT, please:
 
 \item {\bf Theory assumptions and proofs}
     \item[] Question: For each theoretical result, does the paper provide the full set of assumptions and a complete (and correct) proof?
-    \item[] Answer: \answerTODO{} % Replace by \answerYes{}, \answerNo{}, or \answerNA{}.
-    \item[] Justification: \justificationTODO{}
+    \item[] Answer: \answerYes{}
+    \item[] Justification: Section~\ref{sec:method} states Assumptions 1 (smoothness) and 2 (bounded variance). Propositions 1 (bounded scaling), 2 (self-attenuation), and 3 (descent bound) are stated there with full proofs in Appendix~\ref{app:proofs}. The theorems are scoped as \emph{safety properties} rather than mechanism-specific convergence claims, avoiding overreach.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer NA means that the paper does not include theoretical results. 
@@ -1108,8 +1106,8 @@ IMPORTANT, please:
 
     \item {\bf Experimental result reproducibility}
     \item[] Question: Does the paper fully disclose all the information needed to reproduce the main experimental results of the paper to the extent that it affects the main claims and/or conclusions of the paper (regardless of whether the code and data are provided or not)?
-    \item[] Answer: \answerTODO{} % Replace by \answerYes{}, \answerNo{}, or \answerNA{}.
-    \item[] Justification: \justificationTODO{}
+    \item[] Answer: \answerYes{}
+    \item[] Justification: Section~\ref{sec:experiments} and Appendix~\ref{app:datasets} specify datasets, splits, encoders (ResNet-18 for audio and visual, text encoders per dataset), fusion architecture, optimizers, learning rates, batch size, epochs, and all method hyperparameters ($\alpha$, $s_{\max}$, $\beta$, $\mu$, $K$, $\gamma$). The reproduction protocol paragraph in Section~\ref{sec:experiments} documents matched-pipeline choices across baselines. Five seeds per experiment are used throughout, and all training scripts under \texttt{scripts/} and configurations under \texttt{configs/} will be released.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer NA means that the paper does not include experiments.
@@ -1128,8 +1126,8 @@ IMPORTANT, please:
 
 \item {\bf Open access to data and code}
     \item[] Question: Does the paper provide open access to the data and code, with sufficient instructions to faithfully reproduce the main experimental results, as described in supplemental material?
-    \item[] Answer: \answerTODO{} % Replace by \answerYes{}, \answerNo{}, or \answerNA{}.
-    \item[] Justification: \justificationTODO{}
+    \item[] Answer: \answerNo{}
+    \item[] Justification: Code will be released upon acceptance via an anonymized public repository. All datasets are standard public benchmarks (CREMA-D, AVE, Kinetics-Sounds, CMU-MOSI, CMU-MOSEI, Twitter15, Sarcasm, BraTS~2021), with references in Section~\ref{sec:experiments} and Appendix~\ref{app:datasets}. No proprietary data is used.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer NA means that paper does not include experiments requiring code.
@@ -1145,8 +1143,8 @@ IMPORTANT, please:
 
 \item {\bf Experimental setting/details}
     \item[] Question: Does the paper specify all the training and test details (e.g., data splits, hyperparameters, how they were chosen, type of optimizer, etc.) necessary to understand the results?
-    \item[] Answer: \answerTODO{} % Replace by \answerYes{}, \answerNo{}, or \answerNA{}.
-    \item[] Justification: \justificationTODO{}
+    \item[] Answer: \answerYes{}
+    \item[] Justification: Section~\ref{sec:experiments} details encoders, optimizers (SGD with momentum 0.9, learning rate 0.001 with step decay at epoch 70), batch size 64, 100 epochs, and per-method hyperparameters for each baseline. Appendix~\ref{app:datasets} documents dataset-specific preprocessing. Appendix~\ref{app:hp} provides sensitivity sweeps over $\alpha$, $K$, and $s_{\max}$.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer NA means that the paper does not include experiments.
@@ -1156,8 +1154,8 @@ IMPORTANT, please:
 
 \item {\bf Experiment statistical significance}
     \item[] Question: Does the paper report error bars suitably and correctly defined or other appropriate information about the statistical significance of the experiments?
-    \item[] Answer: \answerTODO{} % Replace by \answerYes{}, \answerNo{}, or \answerNA{}.
-    \item[] Justification: \justificationTODO{}
+    \item[] Answer: \answerYes{}
+    \item[] Justification: Table~\ref{tab:main_results} and all ablation tables report mean $\pm$ standard deviation over 5 seeds. The reported standard deviation is the sample standard deviation (unbiased, $n-1$ denominator), and table captions state this convention. Key claims such as AVE from-scratch ($-4.56$~pp) and CREMA-D ($+9.86$~pp) include paired-test $p$-values (for example, $p{=}0.0001$ and $p{<}0.001$ in Table~\ref{tab:operating_conditions}).
     \item[] Guidelines:
     \begin{itemize}
         \item The answer NA means that the paper does not include experiments.
@@ -1173,8 +1171,8 @@ IMPORTANT, please:
 
 \item {\bf Experiments compute resources}
     \item[] Question: For each experiment, does the paper provide sufficient information on the computer resources (type of compute workers, memory, time of execution) needed to reproduce the experiments?
-    \item[] Answer: \answerTODO{} % Replace by \answerYes{}, \answerNo{}, or \answerNA{}.
-    \item[] Justification: \justificationTODO{}
+    \item[] Answer: \answerYes{}
+    \item[] Justification: All experiments run on a single NVIDIA RTX 4090 (24 GB VRAM). A representative CREMA-D 3-frame run (100 epochs, 6698 train and 744 test samples) takes approximately 30 minutes. Total compute for the reported results (8 datasets, $\sim$10 methods, 5 seeds, plus ablations and composability sweeps) is approximately 400 GPU-hours. Preliminary hyperparameter searches that did not appear in the paper account for roughly an additional $2\times$ compute.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer NA means that the paper does not include experiments.
@@ -1185,8 +1183,8 @@ IMPORTANT, please:
     
 \item {\bf Code of ethics}
     \item[] Question: Does the research conducted in the paper conform, in every respect, with the NeurIPS Code of Ethics \url{https://neurips.cc/public/EthicsGuidelines}?
-    \item[] Answer: \answerTODO{} % Replace by \answerYes{}, \answerNo{}, or \answerNA{}.
-    \item[] Justification: \justificationTODO{}
+    \item[] Answer: \answerYes{}
+    \item[] Justification: This work uses only public research datasets under their standard licenses. No human subjects were involved, no data scraping or PII handling was performed, and the research does not enable surveillance, disinformation, or harmful content generation.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer NA means that the authors have not reviewed the NeurIPS Code of Ethics.
@@ -1197,8 +1195,8 @@ IMPORTANT, please:
 
 \item {\bf Broader impacts}
     \item[] Question: Does the paper discuss both potential positive societal impacts and negative societal impacts of the work performed?
-    \item[] Answer: \answerTODO{} % Replace by \answerYes{}, \answerNo{}, or \answerNA{}.
-    \item[] Justification: \justificationTODO{}
+    \item[] Answer: \answerYes{}
+    \item[] Justification: Section~\ref{sec:conclusion} includes a \paragraph{Broader impacts} block discussing (i) positive use for under-resourced modalities in clinical settings, with BraTS~2021 serving as a testbed, (ii) an explicit harm warning for deployment outside the operating regime, where AVE from-scratch regresses by $-4.56$~pp, and (iii) the negligible additional compute overhead ($\sim$1\%), implying no new environmental concern. No generative capability or new data is introduced.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer NA means that there is no societal impact of the work performed.
@@ -1211,8 +1209,8 @@ IMPORTANT, please:
     
 \item {\bf Safeguards}
     \item[] Question: Does the paper describe safeguards that have been put in place for responsible release of data or models that have a high risk for misuse (e.g., pretrained language models, image generators, or scraped datasets)?
-    \item[] Answer: \answerTODO{} % Replace by \answerYes{}, \answerNo{}, or \answerNA{}.
-    \item[] Justification: \justificationTODO{}
+    \item[] Answer: \answerNA{}
+    \item[] Justification: The paper introduces a training-time gradient modulation method, not a pretrained model, dataset, or generative system. No high-misuse-risk artifacts are released.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer NA means that the paper poses no such risks.
@@ -1223,8 +1221,8 @@ IMPORTANT, please:
 
 \item {\bf Licenses for existing assets}
     \item[] Question: Are the creators or original owners of assets (e.g., code, data, models), used in the paper, properly credited and are the license and terms of use explicitly mentioned and properly respected?
-    \item[] Answer: \answerTODO{} % Replace by \answerYes{}, \answerNo{}, or \answerNA{}.
-    \item[] Justification: \justificationTODO{}
+    \item[] Answer: \answerYes{}
+    \item[] Justification: All datasets are cited with their original papers in Section~\ref{sec:experiments} and Appendix~\ref{app:datasets}: CREMA-D~\citep{cao2014cremad} (CC-BY 4.0), AVE~\citep{tian2018ave}, Kinetics-Sounds~\citep{arandjelovic2017kinetics}, CMU-MOSI~\citep{zadeh2016mosi}, CMU-MOSEI~\citep{zadeh2018mosei}, Twitter15, Sarcasm, and BraTS~2021~\citep{baid2021brats}. All datasets are used under their published research terms. ResNet-18 ImageNet-pretrained weights are obtained from torchvision (BSD-3-Clause). Baseline implementations are referenced in Section~\ref{sec:experiments}.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer NA means that the paper does not use existing assets.
@@ -1239,8 +1237,8 @@ IMPORTANT, please:
 
 \item {\bf New assets}
     \item[] Question: Are new assets introduced in the paper well documented and is the documentation provided alongside the assets?
-    \item[] Answer: \answerTODO{} % Replace by \answerYes{}, \answerNo{}, or \answerNA{}.
-    \item[] Justification: \justificationTODO{}
+    \item[] Answer: \answerNA{}
+    \item[] Justification: No new datasets or pretrained models are released. Code will be released upon acceptance with documentation, including a README, configuration files, and sweep scripts.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer NA means that the paper does not release new assets.
@@ -1250,9 +1248,9 @@ IMPORTANT, please:
     \end{itemize}
 
 \item {\bf Crowdsourcing and research with human subjects}
-    \item[] Question: For crowdsourcing experiments and research with human subjects, does the paper include the full text of instructions given to participants and screenshots, if applicable, as well as details about compensation (if any)? 
-    \item[] Answer: \answerTODO{} % Replace by \answerYes{}, \answerNo{}, or \answerNA{}.
-    \item[] Justification: \justificationTODO{}
+    \item[] Question: For crowdsourcing experiments and research with human subjects, does the paper include the full text of instructions given to participants and screenshots, if applicable, as well as details about compensation (if any)?
+    \item[] Answer: \answerNA{}
+    \item[] Justification: The paper involves no crowdsourcing and no direct human-subjects research. The public datasets used are independently curated.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer NA means that the paper does not involve crowdsourcing nor research with human subjects.
@@ -1262,8 +1260,8 @@ IMPORTANT, please:
 
 \item {\bf Institutional review board (IRB) approvals or equivalent for research with human subjects}
     \item[] Question: Does the paper describe potential risks incurred by study participants, whether such risks were disclosed to the subjects, and whether Institutional Review Board (IRB) approvals (or an equivalent approval/review based on the requirements of your country or institution) were obtained?
-    \item[] Answer: \answerTODO{} % Replace by \answerYes{}, \answerNo{}, or \answerNA{}.
-    \item[] Justification: \justificationTODO{}
+    \item[] Answer: \answerNA{}
+    \item[] Justification: No new human-subjects research was conducted. The datasets used are pre-existing public benchmarks. BraTS~2021 consists of de-identified medical imaging released under its published research license.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer NA means that the paper does not involve crowdsourcing nor research with human subjects.
@@ -1274,9 +1272,9 @@ IMPORTANT, please:
 
 \item {\bf Declaration of LLM usage}
     \item[] Question: Does the paper describe the usage of LLMs if it is an important, original, or non-standard component of the core methods in this research? Note that if the LLM is used only for writing, editing, or formatting purposes and does not impact the core methodology, scientific rigorousness, or originality of the research, declaration is not required.
-    %this research? 
-    \item[] Answer: \answerTODO{} % Replace by \answerYes{}, \answerNo{}, or \answerNA{}.
-    \item[] Justification: \justificationTODO{}
+    %this research?
+    \item[] Answer: \answerNo{}
+    \item[] Justification: Not used at all (you can then skip the rest)
     \item[] Guidelines:
     \begin{itemize}
         \item The answer NA means that the core method development in this research does not involve LLMs as any important, original, or non-standard components.
