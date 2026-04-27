@@ -23,6 +23,7 @@
 \usepackage{float}          % [H] float specifier
 \usepackage{tikz}           % diagrams
 \usetikzlibrary{arrows.meta, positioning, calc, fit, backgrounds, decorations.pathreplacing}
+\usepackage{placeins}       % \FloatBarrier to keep figures within their section
 
 % Theorem environments
 \newtheorem{assumption}{Assumption}
@@ -335,6 +336,7 @@ The term ${\partial \loss_{\text{fusion}}}/{\partial g}$ is shared across all mo
 
 
 %---------- 3.2 Decoupled Probe Monitoring ----------
+\FloatBarrier
 \subsection{Decoupled probe monitoring}
 \label{sec:probes}
 
@@ -522,7 +524,7 @@ We evaluate on eight benchmarks across three tasks, four input domains, and 2--4
 \label{sec:baselines}
 We compare against eight methods: \textbf{Baseline} (joint training, no balancing), \textbf{OGM-GE}~\citep{peng2022ogmge} (discriminative-ratio gradient throttling), \textbf{MMPareto}~\citep{wei2024mmpareto} (Pareto-optimal gradient weights), \textbf{AGM}~\citep{li2023agm} (exponential gradient modulation), \textbf{G-Blend}~\citep{wang2020gblending} (OG-ratio loss weighting), \textbf{CGGM}~\citep{guo2024cggm} (classifier-guided magnitude/direction modulation\footnote{Adapted from its original Transformer setting to our CNN/MLP pipeline. The reproduction shows consistent regression across all eight benchmarks, including off-table Food101 ($-37$~pp vs.\ baseline; Appendix~\ref{app:datasets}), which we attribute to backbone mismatch rather than the underlying method.}), \textbf{InfoReg}~\citep{huang2025inforeg} (Fisher information regularization), and \textbf{MILES}~\citep{guerra2025miles} (per-modality learning-rate adjustment). InfoReg and MILES are evaluated on CREMA-D only, as their released implementations target audio-visual classification. MMPareto, AGM, and G-Blend are evaluated on all classification benchmarks but not on BraTS~2021, as their released implementations target classification losses and do not support dense-prediction multi-class Dice objectives out of the box.
 
-\emph{Reproduction protocol.} All baselines are re-run under a matched pipeline (shared encoders, 3-frame CREMA-D, identical augmentation and optimizer) for apples-to-apples comparison. OGM-GE ($69.14\%$) is $3$--$6$~pp below the $72$--$75\%$ in follow-up work using different frame sampling, AGM ($57.42\%$) uses our ResNet-18 rather than its original backbone, MILES is ported without its specialized architecture, and CGGM from its Transformer setting. Sub-baseline AGM/MILES numbers plausibly reflect 3-frame protocol sensitivity, and published configurations are retained without retuning.
+\textbf{Reproduction protocol.} All baselines are re-run under a matched pipeline (shared encoders, 3-frame CREMA-D, identical augmentation and optimizer) for apples-to-apples comparison. OGM-GE ($69.14\%$) is $3$--$6$~pp below the $72$--$75\%$ in follow-up work using different frame sampling, AGM ($57.42\%$) uses our ResNet-18 rather than its original backbone, MILES is ported without its specialized architecture, and CGGM from its Transformer setting. Sub-baseline AGM/MILES numbers plausibly reflect 3-frame protocol sensitivity, and published configurations are retained without retuning.
 
 \textbf{Implementation details.}
 Classification uses concatenation fusion, batch size 64, 100 epochs. Audio-visual datasets use SGD (lr$=$0.001, wd $10^{-4}$) with StepLR, sentiment and text-image use Adam (lr$=$0.001) with StepLR (step 40), and BraTS uses SGD with cosine scheduling (base lr$=$0.01, 5-epoch warmup) and batch size 12. Probe-guided gradient boosting uses identical hyperparameters across all datasets: $K{=}20$, $\beta{=}0.1$, $\mu{=}0.3$, $s_{\max}{=}2.0$, $\gamma{=}1.0$, and $\alpha \in \{0.5, 0.75\}$ for boost-only and OGM-GE-combined variants respectively.
