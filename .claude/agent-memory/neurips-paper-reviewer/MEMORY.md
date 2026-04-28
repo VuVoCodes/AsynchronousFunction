@@ -4,3 +4,4 @@
 - [CGGM/AGM reproduction anomalies](project_baseline_anomalies.md) — Baseline accuracy mismatches vs. published numbers, needs defense
 - [Scope-of-generality tension](project_scope_tension.md) — Headline +2.31 pp is one-dataset-one-combination, needs honest framing
 - [Framing trajectory decision](project_framing_trajectory.md) — 2026-04-23 boost-first vs monitoring-first vs hybrid; recommended hybrid with three-way ablation
+- [Figure 1 evaluation history](project_figure1_evaluation.md) — 2026-04-27 finalized: external standalone TikZ, K-step EMA annotation, conditional approve with 2 minor polish items

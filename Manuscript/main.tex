@@ -202,7 +202,7 @@ Linear probes on frozen representations~\citep{alain2017understanding} are a sta
 \section{Probe-Guided Gradient Boosting}
 \label{sec:method}
 
-We present probe-guided gradient boosting in four stages: problem formulation (\S\ref{sec:problem}), decoupled probe monitoring (\S\ref{sec:probes}), the boost mechanism (\S\ref{sec:boost}), and composability with existing balancing methods (\S\ref{sec:compose}). Algorithm~\ref{alg:pgb} summarizes the complete training procedure.
+We present probe-guided gradient boosting in four stages: problem formulation (\S\ref{sec:problem}), decoupled probe monitoring (\S\ref{sec:probes}), the boost mechanism (\S\ref{sec:boost}), and composability with existing balancing methods (\S\ref{sec:compose}). Algorithm~\ref{alg:pgb} summarizes the complete training procedure. Figure~\ref{fig:architecture} traces the data flow: the top row depicts the forward path (\S\ref{sec:problem}), the dashed bottom row depicts probe monitoring with stop-grad detachment (\S\ref{sec:probes}), and the green boost block plus actuation rail depict the gradient-modification mechanism (\S\ref{sec:boost}). Composition with throttling (\S\ref{sec:compose}) is described in text only.
 
 %---------- 3.1 Problem Formulation ----------
 \subsection{Problem formulation}
@@ -232,105 +232,11 @@ By the chain rule, the gradient with respect to encoder parameters decomposes as
 The term ${\partial \loss_{\text{fusion}}}/{\partial g}$ is shared across all modalities, since all encoder outputs flow through the same fusion head. This shared dependency is the structural root of coupled monitoring failure: when one modality (say $m{=}1$) converges faster and begins to dominate the classifier's predictions, ${\partial \loss_{\text{fusion}}}/{\partial g}$ increasingly reflects the dominant modality's contribution. Any monitoring signal derived from $\loss_{\text{fusion}}$ or its gradients, including the discriminative ratio used by OGM-GE~\citep{peng2022ogmge} and the auxiliary classifier losses used by CGGM~\citep{guo2024cggm}, inherits this bias.
 
 
-%---------- Figure 1: Architecture overview ----------
+%---------- Figure 1: Architecture overview (rendered from figures/architecture.tex) ----------
 \begin{figure}[t]
 \centering
-\resizebox{0.95\textwidth}{!}{%
-\begin{tikzpicture}[
-    >=Latex,
-    box/.style={draw, rounded corners=2pt, minimum height=0.7cm,
-                font=\small, align=center, inner sep=4pt},
-    arr/.style={->, thick},
-    darr/.style={->, thick, dashed, green!50!black},
-    btag/.style={fill=green!15, draw=green!50!black, rounded corners=1pt,
-                 font=\scriptsize, inner sep=2pt},
-]
-
-% ========== FORWARD PASS ==========
-% Audio branch (top)
-\node[box, fill=blue!8, draw=blue!40] (xa) {$\mathbf{x}_a$};
-\node[box, fill=blue!8, draw=blue!40, right=0.5cm of xa, minimum width=2cm] (fa)
-    {Encoder $\encoder_a$};
-\node[box, fill=blue!8, draw=blue!40, right=0.5cm of fa] (za) {$\mathbf{z}_a$};
-
-% Visual branch (below audio, tight)
-\node[box, fill=orange!8, draw=orange!40, below=0.8cm of xa] (xv) {$\mathbf{x}_v$};
-\node[box, fill=orange!8, draw=orange!40, right=0.5cm of xv, minimum width=2cm] (fv)
-    {Encoder $\encoder_v$};
-\node[box, fill=orange!8, draw=orange!40, right=0.5cm of fv] (zv) {$\mathbf{z}_v$};
-
-% Fusion (right, vertically centered between za and zv)
-\node[box, fill=gray!8, draw=gray!40,
-      right=1.0cm of $(za.east)!0.5!(zv.east)$] (concat) {$[\,;\,]$};
-\node[box, fill=gray!8, draw=gray!40, right=0.4cm of concat, minimum width=1.6cm] (g)
-    {Classifier $g$};
-\node[box, fill=red!5, draw=red!35, right=0.4cm of g] (loss) {$\loss$};
-
-% Forward arrows
-\draw[arr, blue!50] (xa) -- (fa);
-\draw[arr, blue!50] (fa) -- (za);
-\draw[arr, orange!50] (xv) -- (fv);
-\draw[arr, orange!50] (fv) -- (zv);
-\draw[arr, blue!50] (za.east) -- ++(0.3,0) |- (concat.170);
-\draw[arr, orange!50] (zv.east) -- ++(0.3,0) |- (concat.190);
-\draw[arr] (concat) -- (g);
-\draw[arr] (g) -- (loss);
-
-% Boost tags on encoders
-\node[btag, anchor=south] at (fa.north) (bfa) {$\times\bar{s}_a$};
-\node[btag, anchor=north] at (fv.south) (bfv) {$\times\bar{s}_v$};
-
-% ========== PROBE MONITORING (below forward pass) ==========
-\node[box, fill=green!6, draw=green!50!black, dashed, minimum width=1.5cm,
-      below=1.5cm of zv] (pa) {Probe $\probe_a$};
-\node[box, fill=green!6, draw=green!50!black, dashed,
-      right=0.4cm of pa, inner sep=3pt] (Pa) {$\bar{P}_a$};
-
-\node[box, fill=green!6, draw=green!50!black, dashed, minimum width=1.5cm,
-      below=0.4cm of pa] (pv) {Probe $\probe_v$};
-\node[box, fill=green!6, draw=green!50!black, dashed,
-      right=0.4cm of pv, inner sep=3pt] (Pv) {$\bar{P}_v$};
-
-% Boost computation
-\node[box, fill=green!10, draw=green!50!black, minimum width=2.2cm,
-      right=0.6cm of $(Pa.east)!0.5!(Pv.east)$] (boost) {$\bar{s}_m = 1 + \alpha\, w_m$};
-
-% Detach arrows: z_a and z_v → probes
-\draw[darr] (za.south) -- ++(0,-0.3) |- (pa.west)
-    node[pos=0.25, left, font=\scriptsize, green!40!black] {\texttt{det.}};
-\draw[darr] (zv.south) -- ++(0,-0.6) |- (pv.west)
-    node[pos=0.25, left, font=\scriptsize, green!40!black] {\texttt{det.}};
-
-% Probe → accuracy → boost
-\draw[darr] (pa) -- (Pa);
-\draw[darr] (pv) -- (Pv);
-\draw[darr] (Pa.east) -- ++(0.15,0) |- (boost.168);
-\draw[darr] (Pv.east) -- ++(0.15,0) |- (boost.192);
-
-% Feedback: boost → encoders (route along the LEFT side to avoid fusion boxes)
-\coordinate (fb_left) at ([xshift=-0.6cm]xa.west);
-\draw[arr, green!50!black]
-    (boost.west) -- ++(-.3,0) |- (fb_left |- pv.west) -- (fb_left |- bfv.west) coordinate (fb_v);
-\draw[arr, green!50!black] (fb_v) -- (bfv.west);
-\draw[arr, green!50!black] (fb_left |- bfv.west) -- (fb_left |- bfa.west) coordinate (fb_a);
-\draw[arr, green!50!black] (fb_a) -- (bfa.west);
-
-% Label on feedback path
-\node[font=\scriptsize, green!40!black, rotate=90, anchor=south]
-    at ([xshift=-0.1cm]$(fb_v)!0.5!(fb_a)$) {scale $\nabla_{\!\theta_m}$};
-
-% ========== LEGEND ==========
-\node[anchor=north, font=\scriptsize, inner sep=0pt]
-    at ([yshift=-0.5cm]$(pv.south west)!0.5!(boost.south east)$) {%
-  \textcolor{blue!50}{\rule{0.5cm}{1.5pt}}~audio \quad
-  \textcolor{orange!50}{\rule{0.5cm}{1.5pt}}~visual \quad
-  {\color{green!50!black}\rule[0.3ex]{0.15cm}{1pt}\hspace{0.05cm}\rule[0.3ex]{0.15cm}{1pt}\hspace{0.05cm}\rule[0.3ex]{0.15cm}{1pt}}~probe (decoupled) \quad
-  \fcolorbox{green!50!black}{green!15}{\scriptsize$\times\bar{s}_m$}~boost
-};
-
-\end{tikzpicture}%
-}% end resizebox
-\caption{Overview of probe-guided gradient boosting. \textbf{Top:} encoder features $\mathbf{z}_m$ are concatenated and classified via the shared fusion head. \textbf{Bottom:} features are \texttt{detach}ed and evaluated by linear probes (dashed green), which yield per-modality accuracies $\bar{P}_m$ and corresponding boost scales $\bar{s}_m$ that amplify the weaker encoder's gradients (green $\times\bar{s}_m$ tags) before the optimizer step.}
+\includegraphics[width=0.95\textwidth]{figures/architecture.pdf}
+\caption{Overview of probe-guided gradient boosting. \textbf{Top row:} encoder features $\mathbf{z}_m$ are concatenated and classified via the shared fusion head $g$, producing $\loss$. \textbf{Bottom row:} features are \texttt{stop-grad}'d and evaluated by linear probes (dashed green), yielding per-modality accuracies $\bar{P}_m$. The boost block computes the relative-gap weight $w_m$, an EMA-smoothed scale $\bar{s}_m$ refreshed only at probe-evaluation events (every $K$ steps, held constant in between), and clips it at $s_{\max}$. The actuation rail (thick green) applies $\bar{s}_m$ to the per-modality gradient $\nabla_{\!\theta_m}\loss$ before the optimizer step. Probes never backpropagate into encoders, so the monitoring signal is structurally decoupled from the fusion objective.}
 \label{fig:architecture}
 \end{figure}
 

@@ -1,0 +1,3 @@
+- [Figure 1 layout patterns](feedback_figure1_layout.md) — Layout rules for the architecture overview that survived multiple revisions
+- [Figure 1 component-to-code mapping](reference_figure1_components.md) — Which TikZ nodes correspond to which code/equations
+- [Project palette](reference_palette.md) — Standard colors used in figures (audblue/visora/probegr) and when to use each
