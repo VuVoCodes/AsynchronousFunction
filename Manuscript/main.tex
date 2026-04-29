@@ -93,7 +93,7 @@ Multimodal learning integrates complementary signals across heterogeneous source
 % Many methods exist, dominated by throttling paradigm.
 % Key limitation: boosting the weak fails with coupled monitoring.
 
-Existing methods share a \emph{throttle-only bias}, intervening primarily by damping the dominant modality's gradient~\citep{peng2022ogmge,wei2024mmpareto,guo2024cggm,wei2024opm,fan2023pmr,kontras2024mlgm}. Some include nominally bidirectional terms~\citep{li2023agm,gao2025arm,huang2025inforeg,wei2025improving}, but throttling empirically dominates, and \citet{wei2024opm}'s boost-only variant OGM* fails to close the gap. In late-fusion, all encoder gradients factor through a shared classifier $g$ via the common term $\partial \loss_{\text{fusion}}/\partial g$, which the dominant modality shapes through its outsized contribution to $\loss_{\text{fusion}}$, so amplifying the weak encoder's gradient merely rescales an already-corrupted shared signal. Recent methods take partial steps~\citep{yang2025iprm,jiang2025aug} but continue to monitor imbalance through signals coupled to the joint training objective.
+Existing methods share a \emph{throttle-only orientation}, intervening primarily by damping the dominant modality's gradient~\citep{peng2022ogmge,wei2024mmpareto,guo2024cggm,wei2024opm,fan2023pmr,kontras2024mlgm}. Some include nominally bidirectional terms~\citep{li2023agm,gao2025arm,huang2025inforeg,wei2025improving}, but throttling empirically dominates, and \citet{wei2024opm}'s boost-only variant OGM* fails to close the gap. In late-fusion, all encoder gradients factor through a shared classifier $g$ via the common term $\partial \loss_{\text{fusion}}/\partial g$, which the dominant modality shapes through its outsized contribution to $\loss_{\text{fusion}}$, so amplifying the weak encoder's gradient merely rescales an already-corrupted shared signal. Recent methods take partial steps~\citep{yang2025iprm,jiang2025aug} but continue to monitor imbalance through signals coupled to the joint training objective.
 
 % --- P4: Proposed method (high-level, 4 sentences) ---
 % Probe-guided gradient boosting with decoupled monitoring.
@@ -159,7 +159,7 @@ Jointly trained multimodal networks frequently underperform their best unimodal 
 % Cite: chen2018gradnorm, yu2020pcgrad, peng2022ogmge, li2023agm, guo2024cggm, kontras2024mlgm
 % 5-6 sentences.
 
-The dominant response has been to modulate gradient magnitudes during backpropagation. Multi-task precursors GradNorm~\citep{chen2018gradnorm} and PCGrad~\citep{yu2020pcgrad} inspired a line of multimodal work. OGM-GE~\citep{peng2022ogmge} scales encoder gradients by a discriminative ratio, refined by AGM~\citep{li2023agm}, CGGM~\citep{guo2024cggm}, and MLGM~\citep{kontras2024mlgm}. Although some methods include bidirectional terms, throttling empirically dominates and boost-only variants remain ineffective: \citet{wei2024opm} show that OGM* fails to close the modality gap, an outcome we attribute to coupled monitoring signals effected by the dominant modality (Section~\ref{sec:method}). M-SAM~\citep{nowdeh2025msam} extends the paradigm by using Shapley attribution to identify the dominant modality and applying sharpness-aware perturbation, inheriting the same coupled-monitoring limitation.
+The dominant response has been to modulate gradient magnitudes during backpropagation. Multi-task precursors GradNorm~\citep{chen2018gradnorm} and PCGrad~\citep{yu2020pcgrad} inspired a line of multimodal work. OGM-GE~\citep{peng2022ogmge} damps the dominant modality's gradient via a ratio of per-modality softmax scores on the target class, refined by AGM~\citep{li2023agm}, CGGM~\citep{guo2024cggm}, and MLGM~\citep{kontras2024mlgm}. Although some methods include bidirectional terms, throttling empirically dominates and boost-only variants remain ineffective: \citet{wei2024opm} show that OGM* fails to close the modality gap, an outcome we attribute to coupled monitoring signals effected by the dominant modality (Section~\ref{sec:method}). M-SAM~\citep{nowdeh2025msam} extends the paradigm by using Shapley attribution to identify the dominant modality and applying sharpness-aware perturbation, inheriting the same coupled-monitoring limitation.
 
 
 % --- 2.3: Beyond gradient modulation ---
@@ -223,7 +223,7 @@ Given $M$ modalities, each input $\mathbf{x}_m$ ($m \in \{1,\ldots,M\}$) is proc
 \mathbf{z}_m = \encoder_m(\mathbf{x}_m;\,\theta_m) \in \mathbb{R}^d.
 \end{equation}
 %
-The features are concatenated and passed through a fusion classifier $g$ parameterized by $\phi$, yielding $\hat{y} = g([\mathbf{z}_1;\ldots;\mathbf{z}_M];\,\phi)$. Training minimizes the cross-entropy loss:
+Each $\mathbf{z}_m$ is a $d$-dimensional real vector with $d$ common across modalities. The features are concatenated and passed through a fusion classifier $g$ parameterized by $\phi$, yielding $\hat{y} = g([\mathbf{z}_1;\ldots;\mathbf{z}_M];\,\phi)$. Training minimizes the cross-entropy loss:
 %
 \begin{equation}
 \label{eq:joint_loss}
