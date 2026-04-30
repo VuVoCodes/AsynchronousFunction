@@ -100,7 +100,7 @@ Existing methods share a \emph{throttle-only orientation}, intervening primarily
 % Composable with existing throttling methods.
 % No implementation details (save for Section 3).
 
-We propose \emph{probe-guided gradient boosting}: lightweight linear probes~\citep{alain2017understanding} on stop-gradient encoder features yield a per-modality representation-quality estimate, whose cross-modality spread defines the \emph{utilization gap}, independent of the shared classifier's loss-derivative, removing the chain-rule coupling that impaired prior boost-the-weak attempts~\citep{wei2024opm}. The signal drives a bounded multiplicative factor on the weaker encoder's gradient, smoothed by an exponential moving average (EMA)~\citep{tarvainen2017mean} with a hard cap and gap-driven decay toward identity. Because the factor acts only on encoder gradients and modifies neither the loss nor the fusion architecture, it is \emph{composable} with throttling methods, multiplying with their suppression factors to produce two-sided pressure toward balance.
+We propose \emph{probe-guided gradient boosting} (PGGB): lightweight linear probes~\citep{alain2017understanding} on stop-gradient encoder features yield a per-modality representation-quality estimate, whose cross-modality spread defines the \emph{utilization gap}, independent of the shared classifier's loss-derivative, removing the chain-rule coupling that impaired prior boost-the-weak attempts~\citep{wei2024opm}. The signal drives a bounded multiplicative factor on the weaker encoder's gradient, smoothed by an exponential moving average (EMA)~\citep{tarvainen2017mean} with a hard cap and gap-driven decay toward identity. Because the factor acts only on encoder gradients and modifies neither the loss nor the fusion architecture, it is \emph{composable} with throttling methods, multiplying with their suppression factors to produce two-sided pressure toward balance.
 
 % --- P5: Main results (3 sentences) ---
 % Experiments on 6 datasets. Key quantitative results.
@@ -116,7 +116,7 @@ We evaluate PGGB on eight benchmarks spanning audio-visual, sentiment, text-imag
 
     \item We introduce \emph{probe-guided gradient boosting}, one instantiation that converts the monitor signal into a bounded multiplicative scaling on the weaker encoder's gradients. It is composable with existing throttling methods (Appendix~\ref{app:composability} validates non-destructive composition with four such methods).
 
-    \item We validate \emph{probe-guided gradient boosting} on eight benchmarks spanning classification, regression, and segmentation. The positive effect is concentrated on high-imbalance audio-visual (CREMA-D) and medical segmentation (BraTS~2021), while on low-imbalance benchmarks the method is near-neutral (within approximately $\pm 1$~pp of baseline on most datasets), with two isolated regressions on the five low-imbalance benchmarks ($-1.72$~pp on Kinetics-Sounds, $-0.64$~pp on Sarcasm) reported in Section~\ref{sec:conclusion}, in contrast to the systematic multi-dataset degradation exhibited by several gradient-modulation baselines.
+    \item We validate \emph{probe-guided gradient boosting} on eight benchmarks across classification, regression, and segmentation. The positive effect is concentrated on high-imbalance audio-visual (CREMA-D) and medical segmentation (BraTS~2021), with near-neutral behavior and isolated regressions on low-imbalance benchmarks (Section~\ref{sec:conclusion}).
 \end{itemize}
 
 
@@ -426,13 +426,14 @@ The bound matches the standard nonconvex SGD rate~\citep{ghadimi2013sgd} up to a
 %=============================================================================
 \section{Experiments}
 \label{sec:experiments}
+\vspace{-1em}
 
 %---------- 4.1 Experimental Setup ----------
 \subsection{Experimental setup}
 \label{sec:datasets}
 
 \textbf{Datasets.}
-We evaluate our proposed method on eight benchmarks across three tasks, where our model is trained on four input domains, and 2--4 modalities, under identical conditions and reported as mean $\pm$ std over five seeds. \emph{Audio-visual:} CREMA-D~\citep{cao2014cremad} (3-frame at 3 fps, following OGM-GE), AVE~\citep{tian2018ave}, and Kinetics-Sounds (KS)~\citep{arandjelovic2017kinetics}. \emph{Sentiment:} CMU-MOSEI~\citep{zadeh2018mosei} and CMU-MOSI~\citep{zadeh2016mosi}. \emph{Text-image:} Twitter15~\citep{yu2019tombert} and Sarcasm~\citep{cai2019sarcasm}. \emph{Segmentation:} BraTS~2021~\citep{baid2021brats}. Encoder choices follow task grouping (ResNet-18 for audio-visual, MLPs on pre-extracted features for sentiment and text-image, DeepLab v3+ with ResNet-101 for BraTS), with per-dataset splits and caveats in Appendix~\ref{app:datasets}.
+We evaluate PGGB on eight benchmarks spanning three tasks and 2--4 modalities, reported as mean $\pm$ std over five seeds. \emph{Audio-visual:} CREMA-D~\citep{cao2014cremad} (3-frame at 3 fps, following OGM-GE), AVE~\citep{tian2018ave}, Kinetics-Sounds (KS)~\citep{arandjelovic2017kinetics}. \emph{Sentiment:} CMU-MOSEI~\citep{zadeh2018mosei}, CMU-MOSI~\citep{zadeh2016mosi}. \emph{Text-image:} Twitter15~\citep{yu2019tombert}, Sarcasm~\citep{cai2019sarcasm}. \emph{Segmentation:} BraTS~2021~\citep{baid2021brats}. Encoders follow task grouping (ResNet-18 for audio-visual, MLPs on pre-extracted features for sentiment and text-image, DeepLab v3+/ResNet-101 for BraTS), with splits and caveats in Appendix~\ref{app:datasets}.
 
 \textbf{Baselines.}
 \label{sec:baselines}
@@ -517,8 +518,9 @@ Among single-mechanism interventions, OGM-GE alone yields $+2.17$~pp versus boos
 \label{sec:operating_conditions}
 
 A complementary question to \emph{which} component drives the CREMA-D gain is \emph{when} the method is effective. We characterize four regimes along three axes (feature learning, encoder initialization, data-to-architecture ratio) in Table~\ref{tab:operating_conditions} and Figure~\ref{fig:operating_conditions_combined}.
+\vspace{-1em}
 
-\begin{table}[t]
+\begin{table}[H]
 \centering
 \caption{Operating conditions across four regimes. Columns: trainable encoders, modality asymmetry (from pretraining or natural learning-rate differences), adequate data-to-architecture ratio, and complementary (non-redundant) modalities. $\Delta$: change in accuracy (pp) for boost+OGM-GE vs.\ baseline. Significance: \textsuperscript{***}$p<0.001$. The AVE (from-scratch) regime is the clearest failure case ($-4.56$ pp) and is analyzed in the body below, the AVE pretrained$\leftrightarrow$scratch contrast localizes the sensitivity to the OGM-GE component. Additional per-regime analysis (Food101, CREMA-D reference point) is provided in Appendix~\ref{app:opcond}.}
 \label{tab:operating_conditions}
@@ -536,8 +538,9 @@ Food101 (frozen)    & $\times$     & ---                     & $\checkmark$     
 \bottomrule
 \end{tabular}
 \end{table}
+\vspace{-1.5em}
 
-\begin{figure*}[t]
+\begin{figure}[H]
 \centering
 \begin{subfigure}[b]{0.55\textwidth}
 \centering
@@ -555,7 +558,8 @@ Food101 (frozen)    & $\times$     & ---                     & $\checkmark$     
 \vspace{-0.8em}
 \caption{Operating-conditions ablation (5 seeds). (a) Boost-only self-attenuates toward baseline when Table~\ref{tab:operating_conditions} conditions are violated, whereas boost+OGM-GE inherits OGM-GE's regime-dependent failure modes (AVE from-scratch is the clearest case). (b) With data and architecture fixed, flipping initialization from pretrained to random shifts boost+OGM-GE from $+0.69$ to $-4.56$~pp ($p{=}0.0001$) while boost-only stays positive, localizing sensitivity to the OGM-GE component.}
 \label{fig:operating_conditions_combined}
-\end{figure*}
+\end{figure}
+\vspace{-1em}
 
 \paragraph{Encoder initialization and scope.}
 Fixing dataset and architecture but varying encoder initialization gives the sharpest contrast (Figure~\ref{fig:ave_contrast}). Boost-only stays positive in both regimes ($+0.87$/$+0.42$~pp, both $p<0.05$), while boost+OGM-GE flips sign ($+0.69 \to -4.56$~pp, $p{=}0.0001$). ImageNet pretraining installs an asymmetry aligned with OGM-GE's throttling assumption. Under from-scratch initialization both encoders are simultaneously under-trained on $\sim$$4$K samples, so suppressing either destabilizes the joint dynamic. This localizes the failure to the OGM-GE component (Appendix~\ref{app:opcond}).
@@ -564,13 +568,13 @@ Fixing dataset and architecture but varying encoder initialization gives the sha
 %---------- 4.4 Analysis ----------
 \subsection{Analysis}
 \label{sec:analysis}
-\vspace{-0.3em}
+\vspace{-1em}
 
-\begin{figure}[!t]
+\begin{figure}[H]
 \centering
-\includegraphics[width=0.85\textwidth]{figures/probe_accuracy_cremad_posthoc.pdf}
-\vspace{-1.2em}
-\caption{Per-modality diagnostics on CREMA-D (5 seeds). \textbf{(a)} Post-hoc linear-probe accuracy $P_m^{\text{post}}$ (Appendix~\ref{app:posthoc_probe_table}), dotted line marks chance ($1/6$). AGM and MILES collapse the weak probe despite competitive aggregate accuracy. \textbf{(b)} Utilization gap $|P_a^{\text{post}} - P_v^{\text{post}}|$. Boost+OGM-GE attains the tightest gap ($2.31$~pp, $5.4\times$ reduction). Error bars: $\pm 1$ std.}
+\includegraphics[width=0.72\textwidth]{figures/probe_accuracy_cremad_posthoc.pdf}
+\vspace{-1.0em}
+\caption{Per-modality diagnostics on CREMA-D (5 seeds). \textbf{(a)} Post-hoc linear-probe accuracy $P_m^{\text{post}}$ (Appendix~\ref{app:posthoc_probe_table}). Dotted line marks chance ($1/6$). AGM and MILES collapse the weak probe. \textbf{(b)} Utilization gap $|P_a^{\text{post}} - P_v^{\text{post}}|$. Boost+OGM-GE attains $2.31$~pp ($5.4\times$ reduction). Error bars: $\pm 1$ std.}
 \label{fig:probe_accuracy}
 \end{figure}
 
