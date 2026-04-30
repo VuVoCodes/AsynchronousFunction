@@ -34,7 +34,6 @@
 \newcommand{\encoder}{f}
 \newcommand{\probe}{h}
 \newcommand{\modality}[1]{\mathcal{M}_{#1}}
-\newcommand{\probeacc}[1]{a^{\text{probe}}_{#1}}
 \newcommand{\boostscale}[1]{\alpha_{#1}}
 \newcommand{\sg}{\operatorname{sg}}
 
@@ -63,7 +62,7 @@
 
 Jointly trained multimodal networks frequently underutilize their weaker modalities, as faster-learning modalities dominate the shared fusion objective and suppress the gradient signal reaching slower ones. Most existing approaches throttle the dominant modality, whereas directly boosting the weaker modality often fails because monitoring signals derived from the joint loss are entangled with, and thus dominated by, the stronger modality.
 We propose a new gradient modulation approach, probe-guided gradient boosting (PGGB), to address the problem by probing and boosting the weak modalities while preserving the strength of the dominant one. 
-Probing is constructed by attaching lightweight linear classifiers to stop-gradient encoder representations to estimate a conditionally unbiased utilization gap. This signal defines a bounded and smoothed scaling factor that adaptively reweighs the gradients of weaker modalities, enabling stable and effective rebalancing during joint optimization.
+Probing is constructed by attaching lightweight linear classifiers to stop-gradient encoder representations to estimate a per-modality representation-quality score. The conditionally unbiased gap between these scores across modalities, the \emph{utilization gap}, serves as an imbalance signal that defines a bounded and smoothed scaling factor adaptively reweighing the gradients of weaker modalities, enabling stable and effective rebalancing during joint optimization.
 The method is composable with throttling methods as the intervention leaves the loss and fusion architecture unchanged. 
 Extensive experiments were conducted across eight benchmarks spanning four domains and 2–4 modalities. The results show that our method outperforms state-of-the-art approaches on highly imbalanced multimodal datasets, while remaining competitive on benchmarks with low or no modality imbalance.
 Bounded scaling, self-attenuation, and a standard-SGD descent bound were established under standard smoothness and bounded-variance assumptions. 
@@ -94,26 +93,26 @@ Multimodal learning integrates complementary signals across heterogeneous source
 % Many methods exist, dominated by throttling paradigm.
 % Key limitation: boosting the weak fails with coupled monitoring.
 
-Existing methods share a \emph{throttle-only orientation}, intervening primarily by damping the dominant modality's gradient~\citep{peng2022ogmge,wei2024mmpareto,guo2024cggm,wei2024opm,fan2023pmr,kontras2024mlgm}. Some include nominally bidirectional terms~\citep{li2023agm,gao2025arm,huang2025inforeg,wei2025improving}, but throttling empirically dominates, and \citet{wei2024opm}'s boost-only variant OGM* fails to close the gap. In late-fusion, all encoder gradients factor through a shared classifier $g$ via the common term $\partial \loss_{\text{fusion}}/\partial g$, which the dominant modality shapes through its outsized contribution to $\loss_{\text{fusion}}$, so amplifying the weak encoder's gradient merely rescales an already-corrupted shared signal. Recent methods take partial steps~\citep{yang2025iprm,jiang2025aug} but continue to monitor imbalance through signals coupled to the joint training objective.
+Existing methods share a \emph{throttle-only orientation}, intervening primarily by damping the dominant modality's gradient~\citep{peng2022ogmge,wei2024mmpareto,guo2024cggm,wei2024opm,fan2023pmr,kontras2024mlgm}. Some include nominally bidirectional terms~\citep{li2023agm,gao2025arm,huang2025inforeg,wei2025improving}, but throttling empirically dominates, and \citet{wei2024opm}'s boost-only variant fails to close the gap. In late-fusion, every encoder's gradient flows through a shared classifier whose loss-derivative is dominated by the strong modality's contribution to the fusion loss. Amplifying the weak encoder's gradient therefore rescales an already-corrupted shared signal. Recent methods take partial steps~\citep{yang2025iprm,jiang2025aug} but continue to monitor imbalance through signals coupled to the joint training objective.
 
 % --- P4: Proposed method (high-level, 4 sentences) ---
 % Probe-guided gradient boosting with decoupled monitoring.
 % Composable with existing throttling methods.
 % No implementation details (save for Section 3).
 
-We propose \emph{probe-guided gradient boosting}: lightweight linear probes~\citep{alain2017understanding} on stop-gradient encoder features yield a per-modality utilization signal that bypasses the shared $\partial \loss_{\text{fusion}}/\partial g$ term, removing the chain-rule coupling that impaired prior boost-the-weak attempts~\citep{wei2024opm}. The signal drives a bounded multiplicative factor on the weaker encoder's gradient, smoothed by an exponential moving average (EMA)~\citep{tarvainen2017mean} with a hard cap and gap-driven decay toward identity. Because the factor acts only on encoder gradients and modifies neither the loss nor the fusion architecture, it is \emph{composable} with throttling methods, multiplying with their suppression factors to produce two-sided pressure toward balance.
+We propose \emph{probe-guided gradient boosting}: lightweight linear probes~\citep{alain2017understanding} on stop-gradient encoder features yield a per-modality representation-quality estimate, whose cross-modality spread defines the \emph{utilization gap}, independent of the shared classifier's loss-derivative, removing the chain-rule coupling that impaired prior boost-the-weak attempts~\citep{wei2024opm}. The signal drives a bounded multiplicative factor on the weaker encoder's gradient, smoothed by an exponential moving average (EMA)~\citep{tarvainen2017mean} with a hard cap and gap-driven decay toward identity. Because the factor acts only on encoder gradients and modifies neither the loss nor the fusion architecture, it is \emph{composable} with throttling methods, multiplying with their suppression factors to produce two-sided pressure toward balance.
 
 % --- P5: Main results (3 sentences) ---
 % Experiments on 6 datasets. Key quantitative results.
 
-We evaluate PGGB on eight benchmarks spanning audio-visual, sentiment, text-image, and medical-segmentation tasks (details in Section~\ref{sec:datasets}). The main gain is observed on the high-imbalance CREMA-D benchmark (3-frame), where combining probe-guided boosting with OGM-GE reaches $71.45 \pm 1.71\%$ accuracy, $+2.31$~pp over OGM-GE alone and $+9.86$~pp over the baseline. On low-imbalance benchmarks, the boost is near-neutral rather than headline-improving: boost-only lies within approximately $\pm 1$~pp of baseline on most such datasets, with two isolated regressions on the five low-imbalance benchmarks (Kinetics-Sounds $-1.72$~pp, Sarcasm $-0.64$~pp) reported in Section~\ref{sec:conclusion}, while several gradient-modulation baselines degrade on multiple datasets (e.g., OGM-GE on Kinetics-Sounds $-1.80$~pp).
+We evaluate PGGB on eight benchmarks spanning audio-visual, sentiment, text-image, and medical-segmentation tasks (details in Section~\ref{sec:datasets}). The main gain is observed on the high-imbalance CREMA-D benchmark (3-frame), where combining probe-guided boosting with a representative gradient-modulation baseline~\citep{peng2022ogmge} reaches $71.45 \pm 1.71\%$ accuracy, $+2.31$~pp over the same baseline alone and $+9.86$~pp over joint training. On low-imbalance benchmarks, the boost is near-neutral rather than headline-improving. Boost-only lies within approximately $\pm 1$~pp of baseline on most such datasets, with two isolated regressions on the five low-imbalance benchmarks (Kinetics-Sounds $-1.72$~pp, Sarcasm $-0.64$~pp) reported in Section~\ref{sec:conclusion}, while several gradient-modulation baselines degrade on multiple datasets (e.g., this baseline~\citep{peng2022ogmge} regresses on Kinetics-Sounds by $-1.80$~pp, Table~\ref{tab:main_results}).
 
 % --- Contributions (4 bullets) ---
 \paragraph{Contributions.}
 \begin{itemize}
     \item We identify a \emph{throttle-only bias} in the modality-balancing literature and show that its natural complement, boosting the weaker modality, fails when the monitoring signal is coupled to the joint training objective, tracing the failure to shared loss derivatives in late-fusion architectures.
 
-    \item We propose \emph{decoupled probe monitoring}, a diagnostic attaching lightweight linear probes to stop-gradient encoder representations, yielding a conditionally unbiased per-modality utilization estimate independent of the joint objective. A three-way ablation ($\alpha{=}0$) confirms the monitor is causally inert in isolation, localizing the $+2.31$~pp gain to boost actuation.
+    \item We propose \emph{decoupled probe monitoring}, a diagnostic attaching lightweight linear probes to stop-gradient encoder representations, yielding a conditionally unbiased \emph{utilization gap} estimate (the spread of per-modality probe accuracies) independent of the joint objective. A three-way ablation ($\alpha{=}0$) confirms the monitor is causally inert in isolation, localizing the $+2.31$~pp gain to boost actuation.
 
     \item We introduce \emph{probe-guided gradient boosting}, one instantiation that converts the monitor signal into a bounded multiplicative scaling on the weaker encoder's gradients. It is composable with existing throttling methods (Appendix~\ref{app:composability} validates non-destructive composition with four such methods).
 
@@ -217,18 +216,18 @@ We present probe-guided gradient boosting in four stages: problem formulation (\
 \subsection{Problem formulation}
 \label{sec:problem}
 
-Given $M$ modalities, each input $\mathbf{x}_m$ ($m \in \{1,\ldots,M\}$) is processed by a modality-specific encoder $\encoder_m$ parameterized by $\theta_m$:
+Each multimodal sample comprises $M$ inputs $\{\mathbf{x}_m\}_{m=1}^{M}$, one per modality. Encoder $\encoder_m$ with parameters $\theta_m$ maps $\mathbf{x}_m$ to $\mathbf{z}_m$:
 %
 \begin{equation}
 \label{eq:encoder}
 \mathbf{z}_m = \encoder_m(\mathbf{x}_m;\,\theta_m) \in \mathbb{R}^d.
 \end{equation}
 %
-Each $\mathbf{z}_m$ is a $d$-dimensional real vector with $d$ common across modalities. The features are concatenated and passed through a fusion classifier $g$ parameterized by $\phi$, yielding $\hat{y} = g([\mathbf{z}_1;\ldots;\mathbf{z}_M];\,\phi)$. Training minimizes the cross-entropy loss:
+Each $\mathbf{z}_m$ is a $d$-dimensional real vector with $d$ common across modalities. The features are concatenated and passed through a fusion classifier $g$ parameterized by $\phi$, yielding the prediction $\hat{y} = g([\mathbf{z}_1;\ldots;\mathbf{z}_M];\,\phi)$. With ground-truth label $y$, training minimizes the cross-entropy loss:
 %
 \begin{equation}
 \label{eq:joint_loss}
-\loss_{\text{fusion}} = \mathrm{CE}\!\bigl(g([\mathbf{z}_1;\ldots;\mathbf{z}_M];\,\phi),\; y\bigr).
+\loss_{\text{fusion}} = \mathrm{CE}\!\bigl(\hat{y},\; y\bigr).
 \end{equation}
 %
 By the chain rule, the gradient with respect to encoder parameters decomposes as
@@ -238,14 +237,14 @@ By the chain rule, the gradient with respect to encoder parameters decomposes as
 {\partial \loss_{\text{fusion}}}/{\partial \theta_m} = ({\partial \loss_{\text{fusion}}}/{\partial g})\,({\partial g}/{\partial \mathbf{z}_m})\,({\partial \mathbf{z}_m}/{\partial \theta_m}).
 \end{equation}
 %
-The term ${\partial \loss_{\text{fusion}}}/{\partial g}$ is shared across all modalities, since all encoder outputs flow through the same fusion head. This shared dependency is the structural root of coupled monitoring failure: when one modality (say $m{=}1$) converges faster and begins to dominate the classifier's predictions, ${\partial \loss_{\text{fusion}}}/{\partial g}$ increasingly reflects the dominant modality's contribution. Any monitoring signal derived from $\loss_{\text{fusion}}$ or its gradients, including the discriminative ratio used by OGM-GE~\citep{peng2022ogmge} and the auxiliary classifier losses used by CGGM~\citep{guo2024cggm}, inherits this bias.
+The term ${\partial \loss_{\text{fusion}}}/{\partial g}$ is shared across all modalities, since all encoder outputs flow through the same fusion classifier. This shared dependency is the root of coupled monitoring failure: when one modality (say $m{=}1$) converges faster and begins to dominate the classifier's predictions, ${\partial \loss_{\text{fusion}}}/{\partial g}$ increasingly reflects the dominant modality's contribution. Any monitoring signal derived from $\loss_{\text{fusion}}$ or its gradients, including the discriminative ratio used by OGM-GE~\citep{peng2022ogmge} and the auxiliary classifier losses used by CGGM~\citep{guo2024cggm}, inherits this bias.
 
 
 %---------- Figure 1: Architecture overview (rendered from figures/architecture.tex) ----------
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.95\textwidth]{figures/architecture.pdf}
-\caption{Illustration of probe-guided gradient boosting on 2 modalities. \textbf{Top row:} encoder features $\mathbf{z}_m$ are concatenated and classified via the shared fusion head $g$, producing $\loss$. \textbf{Bottom row:} stop-gradient features $\sg[\mathbf{z}_m]$ are evaluated by linear probes (dashed green), yielding per-modality accuracies $\bar{P}_m$. The boost block computes the relative-gap weight $w_m$, an EMA-smoothed scale $\bar{s}_m$ refreshed only at probe-evaluation events (every $K$ steps, held constant in between), and clips it at $s_{\max}$. The actuation rail (thick green) applies $\bar{s}_m$ to the per-modality gradient $\nabla_{\!\theta_m}\loss$ before the optimizer step. Probes never backpropagate into encoders, so the monitoring signal is structurally decoupled from the fusion objective.}
+\caption{Illustration of probe-guided gradient boosting on 2 modalities. \textbf{Top row:} encoder features $\mathbf{z}_m$ are concatenated and classified via the shared fusion classifier $g$, producing $\loss$. \textbf{Bottom row:} stop-gradient features $\sg[\mathbf{z}_m]$ are evaluated by linear probes (dashed green), yielding per-modality accuracies $\bar{P}_m$. The boost block computes the relative-gap weight $w_m$, an EMA-smoothed scale $\bar{s}_m$ refreshed only at probe-evaluation events (every $K$ steps, held constant in between), and clips it at $s_{\max}$. The actuation rail (thick green) applies $\bar{s}_m$ to the per-modality gradient $\nabla_{\!\theta_m}\loss$ before the optimizer step. Probes never backpropagate into encoders, so the monitoring signal is structurally decoupled from the fusion objective.}
 \label{fig:architecture}
 \end{figure}
 
@@ -255,58 +254,58 @@ The term ${\partial \loss_{\text{fusion}}}/{\partial g}$ is shared across all mo
 \subsection{Decoupled probe monitoring}
 \label{sec:probes}
 
-To obtain an imbalance signal that is independent of the joint training objective, we attach a lightweight linear probe $\probe_m\colon \mathbb{R}^d \to \mathbb{R}^C$ (with $C$ classes) to each encoder, parameterized by $\psi_m$. The probes are trained on stop-gradient features $\sg[\mathbf{z}_m]$, where $\sg[\cdot]$ denotes the stop-gradient operator~\citep{vandenoord2017vqvae} (identity at the forward pass, zero partial derivatives at the backward pass):
+We attach a lightweight linear probe $\probe_m\colon \mathbb{R}^d \to \mathbb{R}^C$ (with $C$ classes) to each encoder, parameterized by $\psi_m$. The resulting probe accuracies define an imbalance signal, the \emph{utilization gap} (Eq.~\ref{eq:utilization_gap}), independent of the joint training objective. The probes are trained on stop-gradient features $\sg[\mathbf{z}_m]$, where $\sg[\cdot]$ denotes the stop-gradient operator~\citep{vandenoord2017vqvae} (identity at the forward pass, zero partial derivatives at the backward pass):
 %
 \begin{equation}
 \label{eq:probe_loss}
 \loss_{\text{probe},m} = \mathrm{CE}\!\bigl(\probe_m(\sg[\mathbf{z}_m];\,\psi_m),\; y\bigr).
 \end{equation}
 %
-Each probe has its own optimizer that updates only $\psi_m$, and no gradient flows into $\theta_m$. Since $\sg[\mathbf{z}_m]$ severs the computation graph at the feature level, $\loss_{\text{probe},m}$ depends only on the quality of $\mathbf{z}_m$ as a representation, not on how it contributes through $g$. This is precisely why decoupling matters: the probe accuracy $P_m$ measures representation quality not influenced by the dominant modality's influence on $g$.
+Each probe has its own optimizer that updates only $\psi_m$, and no gradient flows into $\theta_m$. Since $\sg[\mathbf{z}_m]$ halts backward propagation at the feature level, $\loss_{\text{probe},m}$ depends only on the quality of $\mathbf{z}_m$ as a representation, not on how it contributes through $g$. This is precisely why decoupling matters: the probe accuracy $P_m$ measures representation quality not influenced by the dominant modality's influence on $g$.
 
-\paragraph{Split-batch evaluation and online estimation.}
-Every $K$ training iterations (we use $K{=}20$), we partition the (shuffled) mini-batch into two disjoint halves, training probes on the first half and evaluating on the second. This yields a \emph{conditionally unbiased} estimate $P_m$ of the current probe's training-distribution accuracy (conditioned on $\psi_m^{(t)}$), since the evaluation half is held out from probe training and drawn i.i.d.\ from the training distribution. To convert this per-evaluation sample into a stable estimator, we accumulate an exponential moving average:
+\paragraph{Split-batch evaluation and on-the-fly estimation.}
+Every $K$ training iteration (we use $K{=}20$), we partition the (shuffled) mini-batch into two disjoint halves, training probes on the first half and evaluating on the second. This yields a \emph{conditionally unbiased} estimate $P_m$ of the current probe's training-distribution accuracy (conditioned on $\psi_m^{(t)}$), since the evaluation half is held out from probe training and drawn i.i.d.\ from the training distribution. To convert this per-evaluation sample into a stable estimator, we accumulate an exponential moving average:
 %
 \begin{equation}
 \label{eq:ema_probe}
 \bar{P}_m \leftarrow \beta \cdot P_m + (1 - \beta) \cdot \bar{P}_m,
 \end{equation}
 %
-with $\beta = 0.1$. Under an i.i.d.\ steady-state assumption with per-sample variance $\sigma^{2}$, the EMA's steady-state variance is $\beta/(2-\beta)\,\sigma^{2} \approx 0.053\,\sigma^{2}$, roughly $19\times$ smaller than a single-batch estimate. The reduction is most pronounced on signals not already saturated near their training-distribution ceiling (Appendix~\ref{app:probe_stability}). The utilization gap
+where $\beta \in [0,1]$ is the smoothing coefficient and other low-pass smoothing methods apply. At $\beta = 0.1$ (\S\ref{sec:datasets}), the steady-state variance is $\beta/(2-\beta)\,\sigma^{2} \approx 0.053\,\sigma^{2}$ under an i.i.d.\ assumption with per-sample variance $\sigma^{2}$, roughly $19\times$ smaller than a single-batch estimate. The \emph{utilization gap} is the spread of smoothed probe accuracies:
 %
 \begin{equation}
 \label{eq:utilization_gap}
-\delta = \max_{m}\,\bar{P}_m - \min_{m}\,\bar{P}_m
+\delta = \max_{m}\,\bar{P}_m - \min_{m}\,\bar{P}_m.
 \end{equation}
 %
-is therefore computed on a low-variance estimator rather than on raw batch fluctuations. Appendix~\ref{app:probe_stability} verifies empirically that the EMA estimator substantially reduces mini-batch noise in the probe signal during training.
+Appendix~\ref{app:probe_stability} verifies empirically that the EMA estimator substantially reduces mini-batch noise in the probe signal during training.
 
 
 %---------- 3.3 Probe-Guided Gradient Boosting ----------
 \subsection{Probe-guided gradient boosting}
 \label{sec:boost}
 
-Given the smoothed probe accuracies $\{\bar{P}_m\}_{m=1}^{M}$, we compute a per-modality boost scale that amplifies the gradients of weaker encoders (Algorithm~\ref{alg:pgb}). The procedure involves three steps.
+Given the EMA-smoothed probe accuracies $\{\bar{P}_m\}_{m=1}^{M}$ (Eq.~\ref{eq:ema_probe}), we compute a per-modality boost scale that amplifies the gradients of weaker encoders (Algorithm~\ref{alg:pgb}). The procedure involves three steps.
 
 \paragraph{Step 1: Relative weakness.}
-For each modality $m$, we compute a normalized weakness score that is zero for the strongest modality and one for the weakest:
+For each modality $m$, we compute a normalized weakness score $w_m \in [0,1]$ (zero for the strongest modality, one for the weakest):
 %
 \begin{equation}
 \label{eq:weakness}
 w_m = \frac{\max_j\,\bar{P}_j - \bar{P}_m}{\max_j\,\bar{P}_j - \min_j\,\bar{P}_j + \epsilon},
 \end{equation}
 %
-where $\epsilon = 10^{-8}$ prevents division by zero when all modalities are equally strong.\footnote{Implementation uses a hard branch returning $s_m = 1$ when the gap falls below $\epsilon$, coinciding with Eq.~\ref{eq:weakness} at $\Delta = 0$.}
+with $\epsilon = 10^{-8}$ as a numerical guard against division by zero.\footnote{Implementation uses a hard branch returning $s_m = 1$ when the gap falls below $\epsilon$, coinciding with Eq.~\ref{eq:weakness} at $\Delta = 0$.}
 
 \paragraph{Step 2: Boost scale.}
-The weakness score is converted to a multiplicative scaling factor:
+We convert $w_m$ to a multiplicative scaling factor:
 %
 \begin{equation}
 \label{eq:boost_scale}
 s_m = \min\!\bigl(1 + \alpha \cdot w_m,\; s_{\max}\bigr),
 \end{equation}
 %
-where $\alpha > 0$ controls the boost strength (default $\alpha{=}0.5$) and $s_{\max}$ caps the maximum amplification to prevent extreme scaling (default $s_{\max}{=}2.0$). When modalities are balanced ($\delta$ small), weakness scores become near zero and $s_m \approx 1$, so the method applies no intervention (Proposition~\ref{prop:attenuation} gives the precise continuity bound).
+where $\alpha > 0$ controls the boost strength and $s_{\max} > 1$ caps the maximum amplification to prevent extreme scaling. When modalities are balanced ($\delta$ small), weakness scores become near zero and $s_m \approx 1$, so the method applies no intervention (Proposition~\ref{prop:attenuation} gives the precise continuity bound).
 
 \paragraph{Step 3: Smoothing and gradient modification.}
 To avoid abrupt changes in the boost signal, we apply temporal smoothing to the scales. We use a separate exponential moving average (EMA), distinct from the probe-accuracy EMA in Eq.~\eqref{eq:ema_probe}, though our analysis (Propositions~\ref{prop:attenuation} and~\ref{prop:convergence}) is stated specifically for this EMA:
@@ -324,14 +323,14 @@ with momentum $\mu = 0.3$. The smoothed scales are applied to the encoder gradie
 \end{equation}
 %
 \begin{algorithm}[H]
-\caption{Probe-Guided Gradient Boosting}
+\caption{Probe-Guided Gradient Boosting (full training pass over $\mathcal{D}$, with $P_m$ per-batch probe accuracy and $\bar{P}_m$ its smoothed estimate).}
 \label{alg:pgb}
 \begin{algorithmic}[1]
-\REQUIRE Encoders $\{\encoder_m\}_{m=1}^M$, fusion classifier $g$, unimodal classifiers $\{g_m\}$, probes $\{\probe_m\}$
-\REQUIRE Boost strength $\alpha$, cap $s_{\max}$, EMA coefficients $\beta$, $\mu$, probe interval $K$
+\REQUIRE Training data $\mathcal{D}$, encoders $\{\encoder_m\}_{m=1}^M$, fusion classifier $g$, unimodal classifiers $\{g_m\}$, probes $\{\probe_m\}$
+\REQUIRE Boost strength $\alpha$, cap $s_{\max}$, smoothing coefficients $\beta$, $\mu$, probe interval $K$
 \REQUIRE Optional: OGM-GE throttle module
 \STATE Initialize $\bar{P}_m \leftarrow 0$, $\bar{s}_m \leftarrow 1$ for all $m$
-\FOR{each mini-batch $(\mathbf{x}, y)$}
+\FOR{each mini-batch $(\mathbf{x}, y) \in \mathcal{D}$}
     \STATE \textbf{Forward:} $\mathbf{z}_m \leftarrow \encoder_m(\mathbf{x}_m;\,\theta_m)$ for all $m$
     \STATE \textbf{Loss:} $\loss \leftarrow \mathrm{CE}(g([\mathbf{z}_1;\ldots;\mathbf{z}_M]), y) + \gamma \sum_m \mathrm{CE}(g_m(\mathbf{z}_m), y)$
     \STATE \textbf{Backward:} compute $\partial\loss/\partial\theta_m$ for all $m$
@@ -359,7 +358,7 @@ with momentum $\mu = 0.3$. The smoothed scales are applied to the encoder gradie
 \subsection{Composability with gradient throttling}
 \label{sec:compose}
 
-Because probe-guided boosting amplifies weaker modalities and never modifies the dominant modality's gradient, it composes with existing synchronous balancing methods (gradient throttling, loss reweighting, and Pareto rescaling). We illustrate this with OGM-GE~\citep{peng2022ogmge} throughout the main experiments, with Appendix~\ref{app:composability} empirically validating composition with four additional methods.
+Because probe-guided boosting amplifies weaker modalities without modifying the dominant modality's gradient, it composes with existing synchronous balancing methods (gradient throttling, loss reweighting, and Pareto rescaling). The main experiments compose with OGM-GE~\citep{peng2022ogmge}, and Appendix~\ref{app:composability} validates composition with four additional methods.
 
 OGM-GE damps the dominant modality's gradient by a \emph{coupled} signal (inter-modal gradient-magnitude ratio $\rho$ derived from $\loss_{\text{fusion}}$), whereas our boost uses a \emph{decoupled} signal (probe accuracy on stop-gradient features $\sg[\mathbf{z}_m]$). The two mechanisms compose multiplicatively on encoder gradients:
 %
@@ -433,16 +432,18 @@ The bound matches the standard nonconvex SGD rate~\citep{ghadimi2013sgd} up to a
 \label{sec:datasets}
 
 \textbf{Datasets.}
-We evaluate on eight benchmarks across three tasks, four input domains, and 2--4 modalities, trained under identical conditions and reported as mean $\pm$ std over five seeds. \emph{Audio-visual:} CREMA-D~\citep{cao2014cremad} (3-frame at 3 fps, following OGM-GE), AVE~\citep{tian2018ave}, and Kinetics-Sounds (KS)~\citep{arandjelovic2017kinetics}. \emph{Sentiment:} CMU-MOSEI~\citep{zadeh2018mosei} and CMU-MOSI~\citep{zadeh2016mosi}. \emph{Text-image:} Twitter15~\citep{yu2019tombert} and Sarcasm~\citep{cai2019sarcasm}. \emph{Segmentation:} BraTS~2021~\citep{baid2021brats}. Encoder choices follow task grouping (ResNet-18 for audio-visual, MLPs on pre-extracted features for sentiment and text-image, DeepLab v3+ with ResNet-101 for BraTS), with per-dataset splits and caveats in Appendix~\ref{app:datasets}.
+We evaluate our proposed method on eight benchmarks across three tasks, where our model is trained on four input domains, and 2--4 modalities, under identical conditions and reported as mean $\pm$ std over five seeds. \emph{Audio-visual:} CREMA-D~\citep{cao2014cremad} (3-frame at 3 fps, following OGM-GE), AVE~\citep{tian2018ave}, and Kinetics-Sounds (KS)~\citep{arandjelovic2017kinetics}. \emph{Sentiment:} CMU-MOSEI~\citep{zadeh2018mosei} and CMU-MOSI~\citep{zadeh2016mosi}. \emph{Text-image:} Twitter15~\citep{yu2019tombert} and Sarcasm~\citep{cai2019sarcasm}. \emph{Segmentation:} BraTS~2021~\citep{baid2021brats}. Encoder choices follow task grouping (ResNet-18 for audio-visual, MLPs on pre-extracted features for sentiment and text-image, DeepLab v3+ with ResNet-101 for BraTS), with per-dataset splits and caveats in Appendix~\ref{app:datasets}.
 
 \textbf{Baselines.}
 \label{sec:baselines}
-We compare against eight methods: \textbf{Baseline} (joint training, no balancing), \textbf{OGM-GE}~\citep{peng2022ogmge} (discriminative-ratio gradient throttling), \textbf{MMPareto}~\citep{wei2024mmpareto} (Pareto-optimal gradient weights), \textbf{AGM}~\citep{li2023agm} (exponential gradient modulation), \textbf{G-Blend}~\citep{wang2020gblending} (OG-ratio loss weighting), \textbf{CGGM}~\citep{guo2024cggm} (classifier-guided magnitude/direction modulation\footnote{Adapted from its original Transformer setting to our CNN/MLP pipeline. The reproduction shows consistent regression across all eight benchmarks, including off-table Food101 ($-37$~pp vs.\ baseline; Appendix~\ref{app:datasets}), which we attribute to backbone mismatch rather than the underlying method.}), \textbf{InfoReg}~\citep{huang2025inforeg} (Fisher information regularization), and \textbf{MILES}~\citep{guerra2025miles} (per-modality learning-rate adjustment). InfoReg and MILES are evaluated on CREMA-D only, as their released implementations target audio-visual classification. MMPareto, AGM, and G-Blend are evaluated on all classification benchmarks but not on BraTS~2021, as their released implementations target classification losses and do not support dense-prediction multi-class Dice objectives out of the box.
+We compare experiment results against eight methods: \textbf{Baseline} (joint training, no balancing), \textbf{OGM-GE}~\citep{peng2022ogmge} (discriminative-ratio gradient throttling), \textbf{MMPareto}~\citep{wei2024mmpareto} (Pareto-optimal gradient weights), \textbf{AGM}~\citep{li2023agm} (exponential gradient modulation), \textbf{G-Blend}~\citep{wang2020gblending} (OG-ratio loss weighting), \textbf{CGGM}~\citep{guo2024cggm} (classifier-guided magnitude/direction modulation\footnote{Adapted from its original Transformer setting to our CNN/MLP pipeline. The reproduction shows consistent regression across all eight benchmarks, including off-table Food101 ($-37$~pp vs.\ baseline; Appendix~\ref{app:datasets}), which we attribute to backbone mismatch rather than the underlying method.}), \textbf{InfoReg}~\citep{huang2025inforeg} (Fisher information regularization), and \textbf{MILES}~\citep{guerra2025miles} (per-modality learning-rate adjustment). InfoReg and MILES are evaluated on CREMA-D only, as their official implementations target audio-visual classification. MMPareto, AGM, and G-Blend are evaluated on all classification benchmarks but not on BraTS~2021, as their official implementations target classification losses and do not support dense-prediction multi-class Dice objectives out of the box.
 
 \textbf{Reproduction protocol.} All baselines are re-run under a matched pipeline (shared encoders, 3-frame CREMA-D, identical augmentation and optimizer) for fair comparison. OGM-GE ($69.14\%$) is $3$--$6$~pp below the $72$--$75\%$ in follow-up work using different frame sampling, AGM ($57.42\%$) uses our ResNet-18 rather than its original backbone, MILES is ported without its specialized architecture, and CGGM from its Transformer setting. Sub-baseline AGM/MILES numbers plausibly reflect 3-frame protocol sensitivity, and published configurations are retained without retuning.
 
 \textbf{Implementation details.}
 Classification uses concatenation fusion, batch size 64, 100 epochs. Audio-visual datasets use SGD (learning rate $0.001$, weight decay $10^{-4}$) with StepLR, sentiment and text-image use Adam (learning rate $0.001$) with StepLR (step $40$), and BraTS uses SGD with cosine scheduling (base learning rate $0.01$, 5-epoch warmup) and batch size $12$. Probe-guided gradient boosting uses identical hyperparameters across all datasets: $K{=}20$, $\beta{=}0.1$, $\mu{=}0.3$, $s_{\max}{=}2.0$, $\gamma{=}1.0$, and $\alpha \in \{0.5, 0.75\}$ for boost-only and OGM-GE-combined variants respectively. Probes are trained with Adam (learning rate $10^{-3}$).
+
+\textbf{Computational overhead.} Each linear probe $\probe_m\colon \mathbb{R}^d \to \mathbb{R}^C$ adds at most a few thousand parameters per modality, negligible relative to the encoders (e.g., ResNet-18 at $\sim$11M parameters). Probe training every $K{=}20$ iterations on a half mini-batch and the multiplicative gradient scaling at the optimizer step together add approximately $1\%$ wall-clock overhead relative to the baseline. The EMA state $\{\bar{P}_m, \bar{s}_m\}$ requires $O(M)$ additional scalars.
 
 \textbf{Imbalance categorization.}
 \label{sec:imbalance_cat}
@@ -479,7 +480,7 @@ Boost+OGM-GE ($\alpha{=}0.75$) & \textbf{71.45}{\scriptsize$\pm$1.71} & 87.23{\s
 \subsection{Main results}
 \label{sec:main_results}
 
-Table~\ref{tab:main_results} reports results across eight benchmarks. On high-imbalance CREMA-D, boost+OGM-GE attains $71.45\%$, $+2.31$~pp over OGM-GE and $+9.86$~pp over baseline, the best among competitors. A three-way decomposition in \S\ref{sec:ablations} isolates this gain to the boost actuation, with the decoupled monitor causally inert at $\alpha{=}0$. Boost-only alone ($+1.13$~pp) is insufficient under severe imbalance, confirming that two-sided intervention is required. On the five low-imbalance datasets boost-only is near-neutral, whereas OGM-GE often regresses (KS $-1.80$~pp, Twitter15 $-0.27$~pp, Sarcasm $-0.59$~pp), consistent with self-attenuation as $\delta \to 0$ (\S\ref{sec:boost}). On BraTS~2021 (DeepLab v3+/ResNet-101, Dice loss), boost+OGM-GE yields $86.49\%$ Dice ($+0.72$~pp), extending the mechanism to dense prediction. The composability claim further extends on AVE to two of four non-OGM-GE methods tested (Appendix~\ref{app:composability}). A comparison against OPM~\citep{wei2024opm}, whose single-layer-fusion dependency requires a separate protocol, is in Appendix~\ref{app:opm_comparison}.
+Table~\ref{tab:main_results} reports results across eight benchmarks. On high-imbalance CREMA-D, boost+OGM-GE attains $71.45\%$, $+2.31$~pp over OGM-GE and $+9.86$~pp over baseline, the best among competitors. A three-way decomposition in \S\ref{sec:ablations} isolates this gain to the boost actuation, with the decoupled monitor causally inert at $\alpha{=}0$. Boost-only alone ($+1.13$~pp) is insufficient under severe imbalance, confirming that two-sided intervention is required. On the five low-imbalance datasets boost-only is near-neutral, whereas OGM-GE often regresses (KS $-1.80$~pp, Twitter15 $-0.27$~pp, Sarcasm $-0.59$~pp), consistent with self-attenuation as $\delta \to 0$ (\S\ref{sec:boost}). Boost+OGM-GE itself remains \emph{competitive} (within standard error of the strongest baseline) on MOSI ($-0.08$~pp), Twitter15 ($-0.22$~pp), and MOSEI ($-0.04$~pp). On BraTS~2021 (DeepLab v3+/ResNet-101, Dice loss), boost+OGM-GE yields $86.49\%$ Dice ($+0.72$~pp), extending the mechanism to dense prediction. The composability claim further extends on AVE to two of four non-OGM-GE methods tested (Appendix~\ref{app:composability}). A comparison against OPM~\citep{wei2024opm}, whose single-layer-fusion dependency requires a separate protocol, is in Appendix~\ref{app:opm_comparison}.
 
 
 %---------- 4.3 Ablation Studies ----------
@@ -569,7 +570,7 @@ Fixing dataset and architecture but varying encoder initialization gives the sha
 \centering
 \includegraphics[width=0.85\textwidth]{figures/probe_accuracy_cremad_posthoc.pdf}
 \vspace{-1.2em}
-\caption{Per-modality diagnostics on CREMA-D (5 seeds). \textbf{(a)} Post-hoc linear-probe accuracy, dotted line marks chance ($1/6$). AGM and MILES collapse the weak probe despite competitive aggregate accuracy. \textbf{(b)} Utilization gap $|a_\text{audio} - a_\text{visual}|$. Boost+OGM-GE attains the tightest gap ($2.31$~pp, $5.4\times$ reduction). Error bars: $\pm 1$ std.}
+\caption{Per-modality diagnostics on CREMA-D (5 seeds). \textbf{(a)} Post-hoc linear-probe accuracy $P_m^{\text{post}}$ (Appendix~\ref{app:posthoc_probe_table}), dotted line marks chance ($1/6$). AGM and MILES collapse the weak probe despite competitive aggregate accuracy. \textbf{(b)} Utilization gap $|P_a^{\text{post}} - P_v^{\text{post}}|$. Boost+OGM-GE attains the tightest gap ($2.31$~pp, $5.4\times$ reduction). Error bars: $\pm 1$ std.}
 \label{fig:probe_accuracy}
 \end{figure}
 
@@ -580,12 +581,12 @@ We probe per-modality utilization with linear classifiers trained on frozen enco
 % SECTION 5: DISCUSSION & CONCLUSION
 %=============================================================================
 \FloatBarrier
-\enlargethispage{1.5\baselineskip}
+\enlargethispage{2\baselineskip}
 \vspace{-1.4em}
 \section{Conclusion}
 \label{sec:conclusion}
 \vspace{-1em}
-Probe-guided boosting yields $+2.31$~pp over OGM-GE on CREMA-D under proven safety properties. The method is conditionally effective (\S\ref{sec:operating_conditions}): $-0.62$/$-0.64$/$-1.72$~pp on MOSEI/Sarcasm/KS and $-4.56$~pp on AVE from scratch. Probe estimates are EMA-smoothed but subsample-noisy, the descent bound inflates variance by $s_{\max}^{2}$, $\alpha$ is per-setting tuned, and probes add $\sim$$1\%$ overhead. No new data or generative capability is introduced, and \S\ref{sec:operating_conditions} should precede deployment.
+We introduced probe-guided gradient boosting: a bounded, EMA-smoothed multiplicative scale on the weaker encoder's gradient driven by stop-gradient probes, composable with throttling methods such as OGM-GE. On CREMA-D it yields $+2.31$~pp under proven safety properties, but is conditionally effective (\S\ref{sec:operating_conditions}: $-0.6$ to $-4.6$~pp on MOSEI/Sarcasm/KS/AVE). \emph{Limitations:} subsample-noisy probe estimates, per-setting $\alpha$, $s_{\max}^{2}$ variance inflation, and $\sim$$1\%$ probe overhead. No new data or generative capability is introduced, and \S\ref{sec:operating_conditions} should precede deployment.
 
 
 %=============================================================================
