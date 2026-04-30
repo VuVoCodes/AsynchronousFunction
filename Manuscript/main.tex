@@ -38,7 +38,7 @@
 \newcommand{\sg}{\operatorname{sg}}
 
 % \title{Probe-Guided Gradient Boosting for Balanced Multimodal Learning}
-\title{Boost the Weak, Don't Brake the Strong: Probe-Guided Gradient Balancing for Multimodal Learning}
+\title{Probe-Guided Gradient Balancing for Multimodal Learning}
 
 
 \author{%
@@ -105,14 +105,14 @@ We propose \emph{probe-guided gradient boosting} (PGGB): lightweight linear prob
 % --- P5: Main results (3 sentences) ---
 % Experiments on 6 datasets. Key quantitative results.
 
-We evaluate PGGB on eight benchmarks spanning audio-visual, sentiment, text-image, and medical-segmentation tasks (details in Section~\ref{sec:datasets}). The main gain is observed on the high-imbalance CREMA-D benchmark (3-frame), where combining probe-guided boosting with a representative gradient-modulation baseline~\citep{peng2022ogmge} reaches $71.45 \pm 1.71\%$ accuracy, $+2.31$~pp over the same baseline alone and $+9.86$~pp over joint training. On low-imbalance benchmarks, the boost is near-neutral rather than headline-improving. Boost-only lies within approximately $\pm 1$~pp of baseline on most such datasets, with two isolated regressions on the five low-imbalance benchmarks (Kinetics-Sounds $-1.72$~pp, Sarcasm $-0.64$~pp) reported in Section~\ref{sec:conclusion}, while several gradient-modulation baselines degrade on multiple datasets (e.g., this baseline~\citep{peng2022ogmge} regresses on Kinetics-Sounds by $-1.80$~pp, Table~\ref{tab:main_results}).
+We evaluate PGGB on eight benchmarks spanning audio-visual, sentiment, text-image, and medical-segmentation tasks (details in Section~\ref{sec:datasets}). The main gain is observed on the high-imbalance CREMA-D benchmark (3-frame), where combining probe-guided boosting with a representative gradient-modulation baseline~\citep{peng2022ogmge} reaches $71.45 \pm 1.71\%$ accuracy, $+2.31$~pp over the same baseline alone and $+9.86$~pp over joint training. On low-imbalance benchmarks, boost-only lies within $\pm 1$~pp of baseline on most datasets, with two isolated regressions (Kinetics-Sounds $-1.72$~pp, Sarcasm $-0.64$~pp) noted in Section~\ref{sec:conclusion}, while several gradient-modulation baselines degrade on multiple datasets (e.g., this baseline~\citep{peng2022ogmge} regresses on Kinetics-Sounds by $-1.80$~pp, Table~\ref{tab:main_results}).
 
 % --- Contributions (4 bullets) ---
 \paragraph{Contributions.}
 \begin{itemize}
-    \item We identify a \emph{throttle-only bias} in the modality-balancing literature and show that its natural complement, boosting the weaker modality, fails when the monitoring signal is coupled to the joint training objective, tracing the failure to shared loss derivatives in late-fusion architectures.
+    \item We identify a \emph{throttle-only bias} in the modality-balancing literature and show that its natural complement, boosting the weaker modality, fails when the monitoring signal is coupled to the joint training objective via shared loss derivatives in late fusion.
 
-    \item We propose \emph{decoupled probe monitoring}, a diagnostic attaching lightweight linear probes to stop-gradient encoder representations, yielding a conditionally unbiased \emph{utilization gap} estimate (the spread of per-modality probe accuracies) independent of the joint objective. A three-way ablation ($\alpha{=}0$) confirms the monitor is causally inert in isolation, localizing the $+2.31$~pp gain to boost actuation.
+    \item We propose \emph{decoupled probe monitoring}, a diagnostic attaching lightweight linear probes to stop-gradient encoder representations, yielding a conditionally unbiased \emph{utilization gap} estimate (the spread of per-modality probe accuracies) independent of the joint objective. With boost active, the full method outperforms multiple state-of-the-art approaches, while leaving boost off stay competitve with state-of-the-art.
 
     \item We introduce \emph{probe-guided gradient boosting}, one instantiation that converts the monitor signal into a bounded multiplicative scaling on the weaker encoder's gradients. It is composable with existing throttling methods (Appendix~\ref{app:composability} validates non-destructive composition with four such methods).
 
@@ -159,7 +159,7 @@ Jointly trained multimodal networks frequently underperform their best unimodal 
 % Cite: chen2018gradnorm, yu2020pcgrad, peng2022ogmge, li2023agm, guo2024cggm, kontras2024mlgm
 % 5-6 sentences.
 
-The dominant response has been to modulate gradient magnitudes during backpropagation. Multi-task precursors GradNorm~\citep{chen2018gradnorm} and PCGrad~\citep{yu2020pcgrad} inspired a line of multimodal work. OGM-GE~\citep{peng2022ogmge} damps the dominant modality's gradient via a ratio of per-modality contributions to the target-class score, refined by AGM~\citep{li2023agm}, CGGM~\citep{guo2024cggm}, and MLGM~\citep{kontras2024mlgm}. Although some methods include bidirectional terms, throttling empirically dominates and boost-only variants remain ineffective: \citet{wei2024opm} show that OGM* fails to close the modality gap, an outcome we attribute to coupled monitoring signals effected by the dominant modality (Section~\ref{sec:method}). M-SAM~\citep{nowdeh2025msam} extends the paradigm by using Shapley attribution to identify the dominant modality and applying sharpness-aware perturbation, inheriting the same coupled-monitoring limitation.
+The dominant response has been to modulate gradient magnitudes during backpropagation. Multi-task precursors GradNorm~\citep{chen2018gradnorm} and PCGrad~\citep{yu2020pcgrad} inspired a line of multimodal work. OGM-GE~\citep{peng2022ogmge} damps the dominant modality's gradient via a ratio of per-modality contributions to the target-class score, refined by AGM~\citep{li2023agm}, CGGM~\citep{guo2024cggm}, and MLGM~\citep{kontras2024mlgm}. Although some methods include bidirectional terms, throttling empirically dominates and boost-only variants remain ineffective: \citet{wei2024opm} show that OGM* fails to close the modality gap, which we attribute to coupled monitoring signals effected by the dominant modality (Section~\ref{sec:method}). M-SAM~\citep{nowdeh2025msam} pairs Shapley attribution with sharpness-aware perturbation, inheriting the same coupled-monitoring limitation.
 
 
 % --- 2.3: Beyond gradient modulation ---
@@ -579,7 +579,7 @@ Fixing dataset and architecture but varying encoder initialization gives the sha
 \end{figure}
 
 We probe per-modality utilization with linear classifiers trained on frozen encoder features. Post-hoc linear probes (Appendix~\ref{app:posthoc_probe_table}, Figure~\ref{fig:probe_accuracy}b) show boost+OGM-GE attains the smallest utilization gap ($2.31$~pp): the weak probe rises $+9.41$~pp, the strong falls only $-0.81$~pp, while AGM, MILES, and G-Blend degrade the weak probe. Extension to $M$ modalities uses pairwise weakness (Eq.~\ref{eq:weakness}).
-
+\vspace{-1.5em}
 
 %=============================================================================
 % SECTION 5: DISCUSSION & CONCLUSION
