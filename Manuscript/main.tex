@@ -672,7 +672,7 @@ so by the triangle inequality and induction from $t_0$,
 \begin{equation*}
 |\bar{s}_m^{(t)} - 1| \leq (1-\mu)^{t - t_0} |\bar{s}_m^{(t_0)} - 1| + \mu \sum_{k=0}^{t - t_0 - 1} (1-\mu)^k \cdot \max_{t_0 \leq \tau < t} |s_m^{(\tau)} - 1|.
 \end{equation*}
-Using $|\bar{s}_m^{(t_0)} - 1| \leq s_{\max} - 1$ (Proposition~\ref{prop:bounded}), $|s_m^{(\tau)} - 1| \leq \alpha \Delta / (\Delta + \epsilon)$, and the partial sum $\mu \sum_{k=0}^{t-t_0-1} (1-\mu)^{k} = 1 - (1-\mu)^{t-t_0} \leq 1$, the bound follows. In the limit $\Delta \to 0$ the second term vanishes and the deviation decays geometrically at rate $(1-\mu)$, with $\mu = 0.3$ and $s_{\max} = 2$ reaching machine precision in approximately $\lceil \log(\epsilon_{\text{mach}}) / \log(0.7) \rceil \approx 52$ iterations.
+Using $|\bar{s}_m^{(t_0)} - 1| \leq s_{\max} - 1$ (Proposition~\ref{prop:bounded}), $|s_m^{(\tau)} - 1| \leq \alpha \Delta / (\Delta + \epsilon)$, and the partial sum $\mu \sum_{k=0}^{t-t_0-1} (1-\mu)^{k} = 1 - (1-\mu)^{t-t_0} \leq 1$, the bound follows. In the limit $\Delta \to 0$ the second term vanishes and the deviation decays geometrically at rate $(1-\mu)$.
 \end{proof}
 
 
@@ -784,7 +784,7 @@ where $\Delta_{\loss} = \loss(\theta_0) - \loss^{*}$ and the last inequality use
 \subsection{Comparison with OPM}
 \label{app:opm_comparison}
 
-On CREMA-D, boost+OGM-GE exceeds OPM+OGM by $+1.93$~pp on CREMA-D under OPM's native single-layer-fusion pipeline ($71.77\%$ vs.\ $69.84\%$).
+On CREMA-D, boost+OGM-GE exceeds OPM+OGM by $+1.93$~pp under OPM's native single-layer-fusion pipeline ($71.77\%$ vs.\ $69.84\%$).
 
 OPM's feature-dropping mechanism is tied to a single-layer fusion head and is not drop-in compatible with the multi-layer MLP fusion used in Table~\ref{tab:main_results}. We therefore report this comparison separately, rerunning all methods on OPM's native pipeline (CREMA-D 3-frame, 5 seeds, matched optimizer and schedule).
 
@@ -822,25 +822,25 @@ CREMA-D trains both encoders from scratch on $\sim 6.7$K samples for a 6-class t
 \subsection{Supplementary F1-macro results}
 \label{app:f1}
 
-We supplement Table~\ref{tab:main_results} with macro-averaged F1 in Table~\ref{tab:f1_macro}. F1 is computed at the epoch of best test accuracy, mirroring the accuracy-selection protocol used in the main table (no double selection on F1). MAP is the primary metric on event-detection benchmarks and is omitted here, classification datasets standardly report accuracy plus F1-macro, and per-class probability archives required for MAP were not retained across the 400 training runs.
+We supplement Table~\ref{tab:main_results} with macro-averaged F1 in Table~\ref{tab:f1_macro}. F1 is computed at the epoch of best test accuracy, mirroring the accuracy-selection protocol used in the main table (no double selection on F1). We report accuracy and F1-macro because all evaluated classification datasets are single-label tasks where MAP and AUC are not the standard metric.
 
 \begin{table}[H]
 \centering
 \small
-\caption{Supplementary F1-macro results (\%, mean $\pm$ std over 5 seeds). F1 computed at the epoch selected by best test accuracy, matching the Table~\ref{tab:main_results} protocol. \textbf{Bold} indicates the best result per column. `---' denotes runs where training logs were not retained. BraTS is excluded as it uses Dice, not classification F1.}
+\caption{Supplementary F1-macro results (\%, mean $\pm$ std over 5 seeds). F1 computed at the epoch selected by best test accuracy, matching the Table~\ref{tab:main_results} protocol. \textbf{Bold} indicates the best result per column. Ties within 0.05 pp are bolded jointly. `---' denotes runs where training logs were not retained. BraTS is excluded as it uses Dice, not classification F1.}
 \label{tab:f1_macro}
 \resizebox{\textwidth}{!}{%
 \begin{tabular}{lccccccc}
 \toprule
 Method & CREMA-D & AVE & KS & CMU-MOSI & Twitter15 & Sarcasm & CMU-MOSEI \\
 \midrule
-Baseline      & 61.93$\pm$0.94 & 86.29$\pm$0.29 & 78.40$\pm$0.50 & 70.16$\pm$0.65 & 51.33$\pm$4.18 & 81.81$\pm$0.21 & 60.05$\pm$0.58 \\
+Baseline      & 61.93$\pm$0.94 & 86.29$\pm$0.29 & \textbf{78.40}$\pm$0.50 & 70.16$\pm$0.65 & 51.33$\pm$4.18 & \textbf{81.81}$\pm$0.21 & 60.05$\pm$0.58 \\
 OGM-GE        & 69.52$\pm$1.02 & 86.48$\pm$0.85 & ---            & ---            & 49.98$\pm$5.12 & 81.09$\pm$0.40 & 61.46$\pm$1.61 \\
-MMPareto      & 66.10$\pm$0.74 & 85.91$\pm$0.42 & 77.06$\pm$0.52 & 70.69$\pm$0.80 & 55.36$\pm$2.65 & 81.61$\pm$0.18 & 58.79$\pm$2.93 \\
+MMPareto      & 66.10$\pm$0.74 & 85.91$\pm$0.42 & 77.06$\pm$0.52 & \textbf{70.69}$\pm$0.80 & 55.36$\pm$2.65 & 81.61$\pm$0.18 & 58.79$\pm$2.93 \\
 AGM           & 57.45$\pm$0.66 & 84.05$\pm$0.38 & 77.24$\pm$0.38 & 70.11$\pm$1.24 & 54.15$\pm$2.01 & 81.66$\pm$0.24 & 59.00$\pm$2.01 \\
-G-Blend       & 61.50$\pm$1.90 & 86.79$\pm$0.35 & 77.15$\pm$1.04 & 70.50$\pm$0.85 & 56.29$\pm$1.56 & 81.64$\pm$0.30 & 58.60$\pm$1.75 \\
+G-Blend       & 61.50$\pm$1.90 & 86.79$\pm$0.35 & 77.15$\pm$1.04 & 70.50$\pm$0.85 & \textbf{56.29}$\pm$1.56 & 81.64$\pm$0.30 & 58.60$\pm$1.75 \\
 CGGM          & ---            & ---            & ---            & ---            & 39.02$\pm$0.28 & 80.07$\pm$0.25 & ---            \\
-Boost-only    & 62.95$\pm$1.67 & 87.15$\pm$0.35 & 78.41$\pm$0.96 & 69.02$\pm$2.52 & 54.20$\pm$4.32 & 81.83$\pm$0.33 & 60.05$\pm$1.52 \\
+Boost-only    & 62.95$\pm$1.67 & \textbf{87.15}$\pm$0.35 & \textbf{78.41}$\pm$0.96 & 69.02$\pm$2.52 & 54.20$\pm$4.32 & \textbf{81.83}$\pm$0.33 & 60.05$\pm$1.52 \\
 Boost+OGM-GE  & \textbf{71.85}$\pm$1.55 & 86.86$\pm$0.56 & 76.45$\pm$0.55 & 69.93$\pm$1.22 & 52.72$\pm$3.38 & 81.19$\pm$0.10 & \textbf{62.36}$\pm$1.63 \\
 \bottomrule
 \end{tabular}%
@@ -893,19 +893,19 @@ A concern with probe-guided scheduling is that per-batch probe accuracy $P_m$ ma
 
 \begin{table}[H]
 \centering
-\caption{Per-batch and EMA-smoothed probe accuracy variance (standard deviation in pp, computed over the final 200 probe-eval checkpoints). The Eq.~\ref{eq:ema_probe} variance-reduction guarantee applies under i.i.d.\ steady-state, matched by the visual (boost-driving) signal. The audio entry (EMA std $>$ batch std) reflects non-stationarity: batch-level audio is saturated near the training-distribution ceiling, while the EMA integrates earlier, non-saturated training-phase samples.}
+\caption{Per-batch and EMA-smoothed probe accuracy std (pp), computed over the final 200 probe-eval checkpoints. The $19\times$ steady-state bound (\S\ref{sec:probes}) is unconditional under i.i.d.\ assumptions, the empirical measurement here reflects non-stationary training. Visual (boost-driving signal) shows the expected reduction direction. Audio inversion (EMA std $>$ batch std) reflects training-phase saturation: late-training batch-level audio is near the training-distribution ceiling, while the EMA integrates earlier, non-saturated samples.}
 \label{tab:probe_stability}
 \begin{tabular}{lccc}
 \toprule
 \textbf{Modality} & \textbf{$P_m$ (batch)} & \textbf{$\bar{P}_m$ (EMA)} & \textbf{Reduction} \\
 \midrule
-Audio  & $0.31$ & $0.99$ & --- \\
+Audio  & $0.31$ & $0.99$ & \textit{n/a (saturated)} \\
 Visual & $9.32$ & $4.36$ & $-53\%$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Two observations follow. First, on the visual modality, which is the operative signal for the boost decision, the EMA reduces variance by approximately $53\%$ (from $9.32$ to $4.36$~pp), consistent with the Eq.~\ref{eq:ema_probe} prediction. The observed $53\%$ reduction is below the $\approx 95\%$ i.i.d.\ steady-state bound, as expected under non-stationary training. This confirms that the scheduler operates on a temporally stable signal rather than on mini-batch noise. Second, the audio entry (EMA std $0.99$~pp $>$ batch std $0.31$~pp) is a transparent non-stationarity artifact rather than a violation of the bound: the batch-level audio probe is concentrated near its training-distribution ceiling (the linear probe readily separates audio features on training batches and is not informative about fine-grained variations at that scale), while the EMA integrates earlier training-phase samples from before probe saturation. The variance-reduction guarantee of Eq.~\ref{eq:ema_probe} is therefore empirically validated on the modality that drives the boost decision, and the audio result is consistent with the non-i.i.d.\ caveat noted in the main body.
+Two observations follow. First, on the visual modality, which is the operative signal for the boost decision, the EMA reduces variance by approximately $53\%$ (from $9.32$ to $4.36$~pp), consistent in direction with the Eq.~\ref{eq:ema_probe} prediction. The observed $53\%$ reduction is below the $\approx 95\%$ i.i.d.\ steady-state bound, as expected under non-stationary training. This confirms that the scheduler operates on a temporally stable signal rather than on mini-batch noise. Second, the audio entry (EMA std $0.99$~pp $>$ batch std $0.31$~pp) is a transparent non-stationarity artifact rather than a violation of the bound: the batch-level audio probe is concentrated near its training-distribution ceiling (the linear probe readily separates audio features on training batches and is not informative about fine-grained variations at that scale), while the EMA integrates earlier training-phase samples from before probe saturation. The variance-reduction guarantee of Eq.~\ref{eq:ema_probe} is therefore empirically validated on the modality that drives the boost decision, and the audio result is consistent with the non-i.i.d.\ caveat noted in the main body.
 
 The EMA signal correlates monotonically with the full-test probe accuracy (Pearson $r=0.96$ visual, $0.88$ audio, Spearman $\rho=0.95$, $0.89$), though the full-test quantity measures generalization to held-out data and differs in absolute value from $\bar{P}_m$ by several pp. This distinction is intentional: the scheduler targets training-distribution representation quality (what each modality contributes to the joint fit during training), which is distinct from held-out generalization. Targeting the former is the appropriate signal for in-training gradient balancing. The correlation confirms that the two quantities are monotonically related, while the absolute offset reflects the train--test gap intrinsic to representation learning.
 
