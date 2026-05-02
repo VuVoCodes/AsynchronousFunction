@@ -2,6 +2,7 @@
 
 \PassOptionsToPackage{numbers, compress}{natbib}
 \usepackage{neurips_2026}
+% \usepackage[final,main]{neurips_2026}
 
 \usepackage[utf8]{inputenc} % allow utf-8 input
 \usepackage[T1]{fontenc}    % use 8-bit T1 fonts
@@ -50,7 +51,20 @@
 
 
 \author{%
-  Anonymous Author(s)
+  Vo Quoc Vu \\
+  School of Science, Engineering \& Technology \\
+  RMIT University \\
+  \texttt{s3575819@rmit.edu.vn} \\
+  \And
+  Haytham Fayek \\
+  School of Science, Engineering \& Technology \\
+  RMIT University \\
+  \texttt{haytham.fayek@rmit.edu.au} \\
+  \And
+  Thuy Nguyen \\
+  School of Science, Engineering \& Technology \\
+  RMIT University \\
+  \texttt{thuy.nguyen43@rmit.edu.vn} \\
 }
 
 
@@ -108,7 +122,7 @@ Existing methods share a \emph{throttle-only orientation}, intervening primarily
 % Composable with existing throttling methods.
 % No implementation details (save for Section 3).
 
-We propose \emph{probe-guided gradient boosting} (PGGB): lightweight linear probes~\citep{alain2017understanding} on stop-gradient features yield a per-modality representation-quality estimate, whose cross-modality spread defines the \emph{utilization gap}, independent of the shared classifier's loss-derivative, removing the chain-rule coupling that impaired prior boost-the-weak attempts~\citep{wei2024opm}. The signal drives a bounded multiplicative factor on the weaker encoder's gradient, smoothed by an exponential moving average (EMA)~\citep{tarvainen2017mean} with a hard cap and gap-driven decay toward identity. Because the factor acts only on encoder gradients and modifies neither the loss nor the fusion architecture, it is \emph{composable} with throttling methods, multiplying with their suppression factors to produce two-sided pressure toward balance.
+We propose \emph{probe-guided gradient boosting} (PGGB): lightweight linear probes~\citep{alain2017understanding} on stop-gradient features (the stop-gradient operator passes activations forward but blocks the gradient at the backward pass~\citep{vandenoord2017vqvae}) yield a per-modality representation-quality estimate, whose cross-modality spread defines the \emph{utilization gap}, independent of the shared classifier's loss-derivative, removing the chain-rule coupling that impaired prior boost-the-weak attempts~\citep{wei2024opm}. The signal drives a bounded multiplicative factor on the weaker encoder's gradient, smoothed by an exponential moving average (EMA)~\citep{tarvainen2017mean} with a hard cap and gap-driven decay toward identity. Because the factor acts only on encoder gradients and modifies neither the loss nor the fusion architecture, it is \emph{composable} with throttling methods, multiplying with their suppression factors to produce two-sided pressure toward balance.
 
 % --- P5: Main results (3 sentences) ---
 % Experiments on 6 datasets. Key quantitative results.
@@ -592,19 +606,16 @@ Fixing dataset and architecture but varying encoder initialization gives the sha
 \vspace{-1.2em}
 
 We probe per-modality utilization with linear classifiers trained on frozen encoder features. Post-hoc linear probes (Appendix~\ref{app:posthoc_probe_table}, Figure~\ref{fig:probe_accuracy}b) show PGGB+OGM-GE attains the smallest utilization gap ($2.31$~pp): the weak probe rises $+9.41$~pp, the strong falls only $-0.81$~pp, while AGM, MILES, and G-Blend degrade the weak probe. Extension to $M$ modalities uses pairwise weakness (Eq.~\ref{eq:weakness}).
-\vspace{-1.2em}
 
 %=============================================================================
 % SECTION 5: DISCUSSION & CONCLUSION
 %=============================================================================
 \FloatBarrier
-\enlargethispage{4\baselineskip}
+\enlargethispage{2\baselineskip}
 \section{Conclusion}
 \label{sec:conclusion}
-\vspace{-1em}
 
 We propose PGGB, a method for balanced multimodal learning that amplifies weaker modalities while preserving stronger ones, composing naturally with existing throttling techniques. On the high-imbalance CREMA-D benchmark, composition with OGM-GE yields $+2.31$~pp over the strongest baseline. Outside the high-imbalance regime the method is conditionally effective, with regressions of $-0.6$ to $-4.6$~pp on certain low-imbalance benchmarks (\S\ref{sec:operating_conditions}). \emph{Limitations.} Per-setting hyperparameter tuning is required, and probes introduce a small computational overhead. \emph{Future work.} Automatic hyperparameter adaptation, broader benchmark coverage, and extension beyond classification and segmentation. No new data is introduced, and \S\ref{sec:operating_conditions} should precede deployment.
-\vspace{-1.8em}
 
 
 %=============================================================================
@@ -837,7 +848,7 @@ We supplement Table~\ref{tab:main_results} with macro-averaged F1 in Table~\ref{
 \toprule
 Method & CREMA-D & AVE & KS & CMU-MOSI & Twitter15 & Sarcasm & CMU-MOSEI \\
 \midrule
-Baseline      & 61.93$\pm$0.94 & 86.29$\pm$0.29 & \textbf{78.40}$\pm$0.50 & 70.16$\pm$0.65 & 51.33$\pm$4.18 & \textbf{81.81}$\pm$0.21 & 60.05$\pm$0.58 \\
+Baseline      & 61.93$\pm$0.94 & 86.29$\pm$0.29 & {78.40}$\pm$0.50 & 70.16$\pm$0.65 & 51.33$\pm$4.18 & {81.81}$\pm$0.21 & 60.05$\pm$0.58 \\
 OGM-GE        & 69.52$\pm$1.02 & 86.48$\pm$0.85 & ---            & ---            & 49.98$\pm$5.12 & 81.09$\pm$0.40 & 61.46$\pm$1.61 \\
 MMPareto      & 66.10$\pm$0.74 & 85.91$\pm$0.42 & 77.06$\pm$0.52 & \textbf{70.69}$\pm$0.80 & 55.36$\pm$2.65 & 81.61$\pm$0.18 & 58.79$\pm$2.93 \\
 AGM           & 57.45$\pm$0.66 & 84.05$\pm$0.38 & 77.24$\pm$0.38 & 70.11$\pm$1.24 & 54.15$\pm$2.01 & 81.66$\pm$0.24 & 59.00$\pm$2.01 \\

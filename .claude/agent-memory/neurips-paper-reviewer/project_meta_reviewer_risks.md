@@ -29,3 +29,19 @@ Meta-reviewer (AC/SAC) risks the paper must survive. Updated 2026-04-23.
 
 7. **"If it's loss-side scaling applied to encoder gradients, why isn't this equivalent to per-modality learning rates (MSLR)?"**
    Paper cites MSLR (yao2022mslr) but doesn't show a head-to-head. A reviewer will notice.
+
+8. **Citation paraphrase risks (added 2026-05-01 audit).**
+   - L98 "Under mild assumptions on latent structure" cites huang2021multimodal — Huang et al. require non-trivial latent-space conditions, not "mild." Soften to "structural assumptions."
+   - L98 "modality laziness ... wang2020gblending,peng2022ogmge" — terminology is from du2023suppression (already cited in §2). Wrong attribution.
+   - L150 "exact durations ... huang2022modality" — paper proves bounds, not exact values. Replace with "explicit bounds."
+   - L170 "OGM-GE ... refined by AGM, CGGM, MLGM" misrepresents AGM (Shapley-based, not refinement of OGM-GE). Reword as "extends with alternative imbalance signals."
+   - L104 "wei2024opm's boost-only variant fails" — citation refers to OPM's OGM* ablation, not the parent paper's main contribution. Add "(OGM* ablation)" qualifier.
+
+9. **Key-point delivery gaps (added 2026-05-01 audit).**
+   - §3.4 composability is asserted, not proved for the general class of throttling methods. Add a bounded-scaling lemma or weaken to OGM-GE-only.
+   - §4.4 utilization-gap analysis is 2.5 sentences — under-supports headline contribution bullet 4. The "5.4× reduction" lacks a baseline-gap reference number in the figure caption.
+   - §4.3.1 "four operating regimes" — Food101 frozen regime has zero analytical text in main body.
+   - §5 conflates AVE main-results (+0.87) with AVE from-scratch (-4.56) in the "$-0.6$ to $-4.6$ pp" range. Misleading.
+   - MILES baseline is cited only in §4 (Table 1, footnote) — no §1 or §2 mention. Reviewer-objection trigger.
+
+10. **§3 footnote at L306 confesses code-vs-paper mismatch on $\epsilon$-guard.** Hard branch in code coincides with Eq. 6 only at $\Delta=0$, not over $0 < \Delta < \epsilon$. Either fix equation to piecewise definition or weaken footnote claim. (Tracked separately in project_section3_pending_fixes.md as Fix #5.)
