@@ -83,7 +83,7 @@
 
 Jointly trained multimodal networks frequently underutilize their weaker modalities, as faster-learning modalities dominate the shared fusion objective and suppress the gradient signal reaching slower ones. Most existing approaches throttle the dominant modality, whereas directly boosting the weaker modality often fails because monitoring signals derived from the joint loss are entangled with, and thus dominated by, the stronger modality.
 We propose a new gradient modulation approach, probe-guided gradient boosting (PGGB), to address the problem by probing and boosting the weak modalities while preserving the strength of the dominant one. 
-Probing is constructed by attaching lightweight linear classifiers to stop-gradient features (encoder outputs detached from the backward pass) to estimate a per-modality representation-quality score. The conditionally unbiased gap between these scores across modalities, the \emph{utilization gap}, serves as an imbalance signal that defines a bounded and smoothed scaling factor adaptively reweighing the gradients of weaker modalities, enabling stable and effective rebalancing during joint optimization.
+Probing is performed by attaching a lightweight linear classifier to each modality’s stop-gradient features to estimate the corresponding representation quality score. The conditionally unbiased gap between these scores across modalities, the \emph{utilization gap}, serves as an imbalance signal that defines a bounded and smoothed scaling factor adaptively reweighing the gradients of weaker modalities, enabling stable and effective rebalancing during joint optimization.
 The method is composable with throttling methods as the intervention leaves the loss and fusion architecture unchanged. 
 Extensive experiments were conducted across eight benchmarks spanning four domains and 2–4 modalities. The results show that our method outperforms state-of-the-art approaches on highly imbalanced multimodal datasets, while remaining competitive on benchmarks with low or no modality imbalance.
 Bounded scaling, self-attenuation, and a standard-SGD descent bound were established under standard smoothness and bounded-variance assumptions. 
@@ -793,14 +793,14 @@ where $\Delta_{\loss} = \loss(\theta_0) - \loss^{*}$ and the last inequality use
 
 \noindent\textbf{BraTS 2021:} BraTS~2021~\citep{baid2021brats} is a multimodal brain tumor segmentation dataset with 4 MRI modalities (FLAIR, T1ce, T1, T2) and 4 voxel-level class labels (background and three tumor sub-regions). Because the official validation and test servers do not expose ground truth, we use a held-out partition of the public training set with 1{,}000 training, 125 validation, and 126 testing volumes. The architecture is DeepLab v3+ with four ResNet-101 encoders sharing a decoder, trained with Dice plus weighted cross-entropy loss. Probes perform binary tumor-presence classification because dense-prediction probes on globally pooled features are not meaningful for the full segmentation task.
 
-\noindent\textbf{Licensing.} CREMA-D (CC-BY 4.0), AVE, Kinetics-Sounds, CMU-MOSI/MOSEI, Twitter15, Sarcasm (MMSD-v1), and BraTS 2021 (RSNA-ASNR-MICCAI public release) are used under their published research terms. See the NeurIPS Paper Checklist for detailed licensing.
+\noindent\textbf{Food101:} UPMC Food-101~\citep{wang2015upmcfood} is a 101-class image-text food classification benchmark. Each item pairs a recipe text with a food image. In our experiments we use 67{,}972 training samples and 22{,}716 test samples. Encoder setup follows Twitter15/Sarcasm: MLP heads on frozen BERT-base (768-d) text and ImageNet ResNet-18 (512-d) image features, so only the heads are trainable. Trainable-encoder runs (App.~\ref{app:opcond}) unfreeze both encoders for end-to-end fine-tuning.
+
+\noindent\textbf{Licensing.} CREMA-D (CC-BY 4.0), AVE, Kinetics-Sounds, CMU-MOSI/MOSEI, Twitter15, Sarcasm (MMSD-v1), Food101 (UPMC research terms), and BraTS 2021 (RSNA-ASNR-MICCAI public release) are used under their published research terms. See the NeurIPS Paper Checklist for detailed licensing.
 
 \subsection{Comparison with OPM}
 \label{app:opm_comparison}
 
-On CREMA-D, PGGB+OGM-GE exceeds OPM+OGM by $+1.93$~pp under OPM's native single-layer-fusion pipeline ($71.77\%$ vs.\ $69.84\%$).
-
-OPM's feature-dropping mechanism is tied to a single-layer fusion head and is not drop-in compatible with the multi-layer MLP fusion used in Table~\ref{tab:main_results}. We therefore report this comparison separately, rerunning all methods on OPM's native pipeline (CREMA-D 3-frame, 5 seeds, matched optimizer and schedule).
+OPM's feature-dropping mechanism is tied to a single-layer fusion head and is not drop-in compatible with the multi-layer MLP fusion used in Table~\ref{tab:main_results}. We therefore report this comparison separately, rerunning all methods on OPM's native pipeline (CREMA-D 3-frame, 5 seeds, matched optimizer and schedule). Under this pipeline, PGGB+OGM-GE exceeds OPM+OGM by $+1.93$~pp ($71.77\%$ vs.\ $69.84\%$).
 
 \begin{table}[H]
 \centering
@@ -930,17 +930,17 @@ Because PGGB applies multiplicative scaling $\bar{s}_m \geq 1$ to encoder gradie
 
 \begin{table}[H]
 \centering
-\caption{Composability with existing balancing methods on CREMA-D (3-frame, mean $\pm$ std over 5 seeds). All rows use identical PGGB hyperparameters. Positive $\Delta$ indicates composition does not hurt the base method's mean accuracy.}
+\caption{Composability with existing balancing methods on CREMA-D (3-frame, mean $\pm$ std over 5 seeds). All rows use identical PGGB hyperparameters. Positive $\Delta$ indicates composition does not hurt the base method's mean accuracy. $^\dagger$: within noise band ($n{=}5$, $\sigma \approx 1$~pp, 80\%-power MDE $\approx 2$~pp), not statistically distinguishable from zero.}
 \label{tab:composability}
 \begin{tabular}{lcccc}
 \toprule
 \textbf{Method} & \textbf{Base alone} & \textbf{PGGB + Base} & \textbf{$\Delta$ mean (pp)} & \textbf{$\Delta$ std} \\
 \midrule
 OGM-GE   & $69.14 \pm 1.13$ & $71.45 \pm 1.71$ & $\mathbf{+2.31}$ & $+0.58$ \\
-MMPareto & $65.51 \pm 0.87$ & $66.00 \pm 1.25$ & $+0.49$          & $+0.38$ \\
-G-Blend  & $61.10 \pm 1.87$ & $61.99 \pm 0.99$ & $+0.89$          & $\mathbf{-0.88}$ ($-47\%$) \\
-AGM      & $57.42 \pm 0.73$ & $58.17 \pm 1.79$ & $+0.75$          & $+1.06$ \\
-CGGM     & $50.22 \pm 1.39$ & $50.32 \pm 1.03$ & $+0.10$          & $-0.36$ \\
+MMPareto & $65.51 \pm 0.87$ & $66.00 \pm 1.25$ & $+0.49^\dagger$ & $+0.38$ \\
+G-Blend  & $61.10 \pm 1.87$ & $61.99 \pm 0.99$ & $+0.89^\dagger$ & $\mathbf{-0.88}$ ($-47\%$) \\
+AGM      & $57.42 \pm 0.73$ & $58.17 \pm 1.79$ & $+0.75^\dagger$ & $+1.06$ \\
+CGGM     & $50.22 \pm 1.39$ & $50.32 \pm 1.03$ & $+0.10^\dagger$ & $-0.36$ \\
 \bottomrule
 \end{tabular}
 \end{table}
