@@ -129,11 +129,11 @@ We evaluate PGGB on eight benchmarks spanning audio-visual, sentiment, text-imag
 \begin{itemize}
     \item We identify a \emph{throttle-only bias} in the modality-balancing literature and show that its natural complement, boosting the weaker modality, fails when the monitoring signal is coupled to the joint training objective via shared loss derivatives in late fusion.
 
-    \item We propose \emph{decoupled probe monitoring}, a diagnostic attaching lightweight linear probes to stop-gradient features, yielding a conditionally unbiased \emph{utilization gap} estimate (the spread of per-modality probe accuracies) independent of the joint objective. With boost active, the full method outperforms multiple state-of-the-art approaches, while leaving boost off stays competitive with state-of-the-art.
+    \item We propose \emph{decoupled probe monitoring}, a diagnostic attaching lightweight linear probes to stop-gradient features, yielding a conditionally unbiased \emph{utilization gap} estimate (the spread of per-modality probe accuracies) independent of the joint objective. The decoupling enables effective weak-modality boosting where prior coupled-monitoring boost-the-weak attempts failed~\citep{wei2024opm}.
 
     \item We introduce \emph{PGGB}, one instantiation that converts the monitor signal into a bounded multiplicative scaling on the weaker encoder's gradients. It is composable with existing throttling methods (Appendix~\ref{app:composability} validates non-destructive composition with four such methods).
 
-    \item We validate \emph{PGGB} on eight benchmarks across classification, regression, and segmentation. The positive effect is concentrated on high-imbalance audio-visual (CREMA-D) and medical segmentation (BraTS~2021), with competitive performance and isolated regressions on low-imbalance benchmarks (Section~\ref{sec:conclusion}).
+    \item We validate \emph{PGGB} on eight benchmarks spanning audio-visual, sentiment, text-image, and medical-segmentation tasks. \emph{PGGB} composed with throttling outperforms state-of-the-art baselines on high-imbalance audio-visual (CREMA-D) and matches or exceeds the strongest available baseline on medical segmentation (BraTS~2021), and \emph{PGGB} used alone remains competitive with the strongest baselines on the remaining low-imbalance datasets, with isolated regressions noted in Section~\ref{sec:conclusion}.
 \end{itemize}
 
 
