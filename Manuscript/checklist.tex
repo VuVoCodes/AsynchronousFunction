@@ -5,7 +5,7 @@
 \item {\bf Claims}
     \item[] Question: Do the main claims made in the abstract and introduction accurately reflect the paper's contributions and scope?
     \item[] Answer: \answerYes{}
-    \item[] Justification: The abstract and Section~\ref{sec:intro} contributions accurately reflect the empirical findings, including the three-way ablation in Section~\ref{sec:ablations} and the eight-benchmark scope in Table~\ref{tab:main_results}. The headline $+2.31$~pp gain is explicitly scoped to the high-imbalance, adequate-data regime (Section~\ref{sec:operating_conditions}). Section~\ref{sec:conclusion} names low-imbalance regressions (KS $-1.72$~pp, Sarcasm $-0.64$~pp) and the AVE from-scratch failure ($-4.56$~pp).
+    \item[] Justification: The abstract and Section~\ref{sec:intro} contributions accurately reflect the empirical findings, including the three-way ablation in Section~\ref{sec:ablations} and the eight-benchmark scope in Table~\ref{tab:main_results}. The headline $+2.31$~pp gain is explicitly scoped to the high-imbalance, adequate-data regime (Section~\ref{sec:operating_conditions}). Section~\ref{sec:conclusion} names a $-0.6$ to $-4.6$~pp regression range on low-imbalance benchmarks, with individual values disclosed in Section~\ref{sec:intro} (KS $-1.72$~pp, Sarcasm $-0.64$~pp) and Section~\ref{sec:operating_conditions} (AVE from-scratch $-4.56$~pp).
     \item[] Guidelines:
     \begin{itemize}
         \item The answer \answerNA{} means that the abstract and introduction do not include the claims made in the paper.
@@ -17,7 +17,7 @@
 \item {\bf Limitations}
     \item[] Question: Does the paper discuss the limitations of the work performed by the authors?
     \item[] Answer: \answerYes{}
-    \item[] Justification: Section~\ref{sec:conclusion} explicitly discusses limitations: conditional effectiveness (Section~\ref{sec:operating_conditions}), regressions on MOSEI, Sarcasm, and Kinetics-Sounds, probe subsample noise with EMA mitigation, the variance-inflation factor $s_{\max}^{2}$ in the descent bound (Appendix~\ref{app:proofs}), per-setting tuning of $\alpha$ (Appendix~\ref{app:hp}), and the $\sim$$1\%$ probe overhead. The broader-impact failure mode on AVE from-scratch ($-4.56$~pp) is also disclosed.
+    \item[] Justification: Section~\ref{sec:conclusion} discusses limitations: conditional effectiveness (Section~\ref{sec:operating_conditions}), per-setting tuning of $\alpha$, and $\sim$$1\%$ probe overhead. Detailed technical limitations are in Section~\ref{sec:method} (variance-inflation factor $s_{\max}^{2}$ in the descent bound) and Appendix~\ref{app:probe_stability} (probe subsample noise with EMA mitigation). The broader-impact failure mode on AVE from-scratch ($-4.56$~pp) is disclosed in Section~\ref{sec:operating_conditions}.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer \answerNA{} means that the paper has no limitation while the answer \answerNo{} means that the paper has limitations, but those are not discussed in the paper.
@@ -84,7 +84,7 @@
 \item {\bf Experimental setting/details}
     \item[] Question: Does the paper specify all the training and test details (e.g., data splits, hyperparameters, how they were chosen, type of optimizer) necessary to understand the results?
     \item[] Answer: \answerYes{}
-    \item[] Justification: Section~\ref{sec:experiments} details encoders, optimizers (SGD with momentum 0.9, learning rate 0.001 with step decay at epoch 70), batch size 64, 100 epochs, and per-method hyperparameters for each baseline. Appendix~\ref{app:datasets} documents dataset-specific preprocessing. Appendix~\ref{app:hp} provides sensitivity sweeps over $\alpha$, $K$, and $s_{\max}$.
+    \item[] Justification: Section~\ref{sec:experiments} details encoders, optimizers (SGD with weight decay $10^{-4}$ and StepLR for audio-visual, Adam with StepLR step 40 for sentiment and text-image, SGD with cosine scheduling and 5-epoch warmup for BraTS), learning rate $10^{-3}$ (probes via Adam), batch size 64 (12 for BraTS), 100 epochs, and per-method hyperparameters for each baseline. Appendix~\ref{app:datasets} documents dataset-specific preprocessing. Appendix~\ref{app:hp} provides sensitivity sweeps over $\alpha$, $K$, and $s_{\max}$.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer \answerNA{} means that the paper does not include experiments.
@@ -95,7 +95,7 @@
 \item {\bf Experiment statistical significance}
     \item[] Question: Does the paper report error bars suitably and correctly defined or other appropriate information about the statistical significance of the experiments?
     \item[] Answer: \answerYes{}
-    \item[] Justification: Table~\ref{tab:main_results} and all ablation tables report mean $\pm$ standard deviation over five seeds. The reported standard deviation is the sample standard deviation (unbiased, $n{-}1$ denominator), and table captions state this convention. Key claims such as AVE from-scratch ($-4.56$~pp) and CREMA-D ($+9.86$~pp) include paired-test $p$-values (for example, $p{=}0.0001$ and $p{<}0.001$ in Table~\ref{tab:operating_conditions}).
+    \item[] Justification: Table~\ref{tab:main_results} and all ablation tables report mean $\pm$ standard deviation over five seeds. The reported standard deviation is the sample standard deviation (unbiased, $n{-}1$ denominator), and table captions state this convention. Key claims such as AVE from-scratch ($-4.56$~pp) and CREMA-D ($+9.86$~pp) include Welch's t-test $p$-values (for example, $p{=}0.0001$ and $p{<}0.001$ in Table~\ref{tab:operating_conditions}).
     \item[] Guidelines:
     \begin{itemize}
         \item The answer \answerNA{} means that the paper does not include experiments.
@@ -136,7 +136,7 @@
 \item {\bf Broader impacts}
     \item[] Question: Does the paper discuss both potential positive societal impacts and negative societal impacts of the work performed?
     \item[] Answer: \answerYes{}
-    \item[] Justification: Section~\ref{sec:conclusion} discusses broader impacts: (i) positive use for under-resourced modalities in clinical settings, with BraTS~2021 serving as a testbed, (ii) an explicit harm warning for deployment outside the operating regime, where AVE from-scratch regresses by $-4.56$~pp, and (iii) the negligible additional compute overhead ($\sim$$1\%$), implying no new environmental concern. No generative capability or new data is introduced.
+    \item[] Justification: Positive societal impact is the primary motivator: improving balanced multimodal learning has applications in under-resourced modalities (Section~\ref{sec:datasets} includes BraTS~2021 medical segmentation as a testbed). Negative-impact discussion: Section~\ref{sec:conclusion} explicitly warns that deployment should follow the operating-conditions analysis (Section~\ref{sec:operating_conditions}) given the AVE from-scratch failure ($-4.56$~pp), the method introduces $\sim$$1\%$ additional compute overhead, no new data, and no generative capability.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer \answerNA{} means that there is no societal impact of the work performed.
@@ -212,8 +212,8 @@
 
 \item {\bf Declaration of LLM usage}
     \item[] Question: Does the paper describe the usage of LLMs if it is an important, original, or non-standard component of the core methods in this research? Note that if the LLM is used only for writing, editing, or formatting purposes and does \emph{not} impact the core methodology, scientific rigor, or originality of the research, declaration is not required.
-    \item[] Answer: \answerNo{}
-    \item[] Justification: LLMs are not used
+    \item[] Answer: \answerNA{}
+    \item[] Justification: LLMs are not a component of the core methodology.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer \answerNA{} means that the core method development in this research does not involve LLMs as any important, original, or non-standard components.
