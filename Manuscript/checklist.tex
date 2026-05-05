@@ -5,7 +5,7 @@
 \item {\bf Claims}
     \item[] Question: Do the main claims made in the abstract and introduction accurately reflect the paper's contributions and scope?
     \item[] Answer: \answerYes{}
-    \item[] Justification: The abstract and Section~\ref{sec:intro} contributions accurately reflect the empirical findings, including the three-way ablation in Section~\ref{sec:ablations} and the eight-benchmark scope in Table~\ref{tab:main_results}. The headline $+2.31$~pp gain is explicitly scoped to the high-imbalance, adequate-data regime (Section~\ref{sec:operating_conditions}). Section~\ref{sec:conclusion} names a $-0.6$ to $-4.6$~pp regression range on low-imbalance benchmarks, with individual values disclosed in Section~\ref{sec:intro} (KS $-1.72$~pp, Sarcasm $-0.64$~pp) and Section~\ref{sec:operating_conditions} (AVE from-scratch $-4.56$~pp).
+    \item[] Justification: The abstract and Section~\ref{sec:intro} contributions accurately reflect the empirical findings, including the three-way ablation in Section~\ref{sec:ablations} and the eight-benchmark scope in Table~\ref{tab:main_results}. PGGB alone is the best-performing method on four of five low-imbalance benchmarks (AVE, Kinetics-Sounds, Twitter15, Sarcasm). The headline $+2.31$~pp gain on CREMA-D is from PGGB+OGM-GE composition and is explicitly scoped to the high-imbalance, adequate-data regime (Section~\ref{sec:operating_conditions}). Section~\ref{sec:conclusion} names a $-0.6$ to $-4.6$~pp regression range under PGGB+OGM-GE composition or specialized operating conditions, with individual values disclosed in Section~\ref{sec:intro} (Kinetics-Sounds $-1.72$~pp and Sarcasm $-0.64$~pp under PGGB+OGM-GE) and Section~\ref{sec:operating_conditions} (AVE from-scratch $-4.56$~pp).
     \item[] Guidelines:
     \begin{itemize}
         \item The answer \answerNA{} means that the abstract and introduction do not include the claims made in the paper.
@@ -17,7 +17,7 @@
 \item {\bf Limitations}
     \item[] Question: Does the paper discuss the limitations of the work performed by the authors?
     \item[] Answer: \answerYes{}
-    \item[] Justification: Section~\ref{sec:conclusion} discusses limitations: conditional effectiveness (Section~\ref{sec:operating_conditions}), per-setting tuning of $\alpha$, and $\sim$$1\%$ probe overhead. Detailed technical limitations are in Section~\ref{sec:method} (variance-inflation factor $s_{\max}^{2}$ in the descent bound) and Appendix~\ref{app:probe_stability} (probe subsample noise with EMA mitigation). The broader-impact failure mode on AVE from-scratch ($-4.56$~pp) is disclosed in Section~\ref{sec:operating_conditions}.
+    \item[] Justification: Section~\ref{sec:conclusion} discusses limitations: conditional effectiveness (Section~\ref{sec:operating_conditions}), per-setting tuning of $\alpha$, $\sim$$1\%$ probe overhead, regressions of Kinetics-Sounds $-1.72$~pp and Sarcasm $-0.64$~pp under PGGB+OGM-GE composition, and compound gains for non-OGM-GE composition partners observed only on AVE (two of four methods, Appendix~\ref{app:composability}). Detailed technical limitations are in Section~\ref{sec:method} (variance-inflation factor $s_{\max}^{2}$ in the descent bound) and Appendix~\ref{app:probe_stability} (probe subsample noise with EMA mitigation). The broader-impact failure mode on AVE from-scratch ($-4.56$~pp) is disclosed in Section~\ref{sec:operating_conditions}.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer \answerNA{} means that the paper has no limitation while the answer \answerNo{} means that the paper has limitations, but those are not discussed in the paper.
@@ -67,7 +67,7 @@
 \item {\bf Open access to data and code}
     \item[] Question: Does the paper provide open access to the data and code, with sufficient instructions to faithfully reproduce the main experimental results, as described in supplemental material?
     \item[] Answer: \answerNo{}
-    \item[] Justification: Code will be released upon acceptance via an anonymized public repository. All datasets are standard public benchmarks (CREMA-D, AVE, Kinetics-Sounds, CMU-MOSI, CMU-MOSEI, Twitter15, Sarcasm, BraTS~2021), with references in Section~\ref{sec:experiments} and Appendix~\ref{app:datasets}. No proprietary data is used.
+    \item[] Justification: Code will be released under MIT license via a public repository upon acceptance. All datasets are standard public benchmarks (CREMA-D, AVE, Kinetics-Sounds, CMU-MOSI, CMU-MOSEI, Twitter15, Sarcasm, BraTS~2021), with references in Section~\ref{sec:experiments} and Appendix~\ref{app:datasets}. No proprietary data is used.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer \answerNA{} means that paper does not include experiments requiring code.
