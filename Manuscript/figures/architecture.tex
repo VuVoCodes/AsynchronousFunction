@@ -41,10 +41,6 @@
     {Encoder $\encoder_v$};
 \node[box, fill=visora!12, draw=visora!70, right=0.55cm of fv] (zv) {$\mathbf{z}_v$};
 
-% Mark x_a / x_v as ORIGINAL inputs explicitly (clarifies that no stop-grad sits on the input wire).
-\node[font=\scriptsize\itshape, anchor=south, audblue!85] at ([yshift=0.05cm]xa.north) {original input};
-\node[font=\scriptsize\itshape, anchor=north, visora!85] at ([yshift=-0.05cm]xv.south) {original input};
-
 \node[box, fill=gray!8, draw=gray!50,
       right=1.0cm of $(za.east)!0.5!(zv.east)$] (concat) {$[\,;\,]$};
 \node[box, fill=gray!8, draw=gray!50, right=0.4cm of concat, minimum width=1.7cm] (g)
@@ -100,12 +96,12 @@
 % Audio probe flow: solid blue line from z_a (with stop-grad badge BELOW the wire) to Probe h_a.
 % Stop-grad badge is anchored BELOW the horizontal segment so it does not cut the line.
 \draw[parraud]
-    (za.south) -- ([yshift=-0.55cm]fv.south -| za)
-              -- ([yshift=-0.55cm]fv.south -| pa)
+    (za.south) -- ++(0,-0.25)
+              -| ([xshift=-0.45cm]xv.west)
+              |- ([yshift=-0.55cm]fv.south -| pa)
               -- (pa.north);
-\node[sgbadge, anchor=north, fill=white, draw=audblue!70, text=audblue!90]
-    at ([yshift=-0.18cm]$([yshift=-0.55cm]fv.south -| za)!0.5!([yshift=-0.55cm]fv.south -| pa)$)
-    {$\mathrm{sg}[\mathbf{z}_a]$};
+\node[sgbadge, anchor=east, fill=white, draw=audblue!70, text=audblue!90]
+    at ([xshift=-0.05cm, yshift=0.1cm]xv.west) {$\mathrm{sg}[\mathbf{z}_a]$};
 
 % Visual probe flow: solid orange line from z_v straight down to Probe h_v.
 \draw[parrvis] (zv.south) -- (pv.north);
@@ -119,7 +115,17 @@
 
 % Accuracies feed the Boost block.
 \draw[parrvis] (Pv.east) -- (boost.west);
-\draw[parraud] (Pa.north) to[out=60,in=180] (boost.north west);
+% Audio accuracy line: rounded L-shape that drops STRAIGHT DOWN from \bar{P}_a's
+% south into a low horizontal rail well below the probe row, traverses right
+% beneath pv/Pv with guaranteed clearance, then rises into the Boost block's
+% west edge. Rounded corners keep the path visually smooth. Using an L-shape
+% (instead of a Bezier whose belly can graze \bar{P}_v's south edge mid-sweep)
+% guarantees no intersection with the visual probe nodes at any point.
+\coordinate (audRailY) at ([yshift=-0.45cm]Pv.south);
+\draw[parraud, rounded corners=4pt]
+    (Pa.south) -- (Pa.south |- audRailY)
+              -- (boostWrap.west |- audRailY)
+              -- (boostWrap.west);
 
 \coordinate (railTopY) at ([yshift=0.7cm]fa.north);
 \coordinate (railR) at (boost.north |- railTopY);
@@ -141,6 +147,7 @@
 % ===================== Legend =====================
 \coordinate (legendAnchor) at ([yshift=-1.1cm]pa.south -| concat);
 \node[anchor=north, font=\scriptsize, inner sep=2pt] at (legendAnchor) {%
+  \tikz[baseline=-0.6ex]\node[draw=audblue!60, fill=audblue!10, rounded corners=1pt, inner sep=1.5pt, font=\scriptsize]{$\mathbf{x}_a$};\,\tikz[baseline=-0.6ex]\node[draw=visora!70, fill=visora!12, rounded corners=1pt, inner sep=1.5pt, font=\scriptsize]{$\mathbf{x}_v$};~original input \quad
   \tikz[baseline=-0.6ex]\draw[->,thick] (0,0)--(0.5,0);~forward \quad
   \tikz[baseline=-0.6ex]\draw[->,thick,audblue] (0,0)--(0.5,0);~audio probe flow (sg) \quad
   \tikz[baseline=-0.6ex]\draw[->,thick,visora] (0,0)--(0.5,0);~visual probe flow (sg) \quad
