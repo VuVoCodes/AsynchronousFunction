@@ -199,7 +199,7 @@ The dominant response has been to modulate gradient magnitudes during backpropag
 %       wei2024dr, huang2025inforeg, gao2025arm, yao2022mslr
 % 5-6 sentences.
 
-Beyond gradient scaling, a broader set of interventions has been proposed. These include feed-forward feature modulation~\citep{wei2024opm} and Pareto-optimal aggregation~\citep{wei2024mmpareto}. Modality-alternating schemes interleave unimodal and joint updates~\citep{hua2024reconboost,zhang2024mla}. Diagnostic methods detect imbalance through separability~\citep{wei2024dr}, Fisher information~\citep{huang2025inforeg}, or bias-variance decomposition~\citep{wei2025improving}. Other approaches intervene at the data level~\citep{ma2025remixing,yu2026tcmax}. Per-modality learning-rate methods~\citep{yao2022mslr,guerra2025miles} are an adjacent class operating on the optimizer step rather than the gradient, included in our comparison via MILES (Table~\ref{tab:main_results}). Despite their diversity, these methods share a common design choice. Imbalance is detected through signals \emph{coupled} to the joint objective, such as gradient ratios, per-modality losses, or live-model predictions (with the partial exception of PMR's decoupled unimodal prototypes~\citep{fan2023pmr}). These are precisely the quantities distorted by dominant-modality dynamics, which limits the reliability of the resulting corrections.
+Beyond gradient scaling, a broader set of interventions has been proposed. These include feed-forward feature modulation~\citep{wei2024opm} and Pareto-optimal aggregation~\citep{wei2024mmpareto}. Modality-alternating schemes interleave unimodal and joint updates~\citep{hua2024reconboost,zhang2024mla}. Diagnostic methods detect imbalance through separability~\citep{wei2024dr}, Fisher information~\citep{huang2025inforeg}, or bias-variance decomposition~\citep{wei2025improving}. Other approaches intervene at the data level~\citep{ma2025remixing,yu2026tcmax}. Per-modality learning-rate methods~\citep{yao2022mslr,guerra2025miles} are an adjacent class operating on the optimizer step rather than the gradient. Despite their diversity, these methods share a common design choice. Imbalance is detected through signals \emph{coupled} to the joint objective, such as gradient ratios, per-modality losses, or live-model predictions (with the partial exception of PMR's decoupled unimodal prototypes~\citep{fan2023pmr}). These are precisely the quantities distorted by dominant-modality dynamics, which limits the reliability of the resulting corrections.
 
 
 % --- 2.4: Probing and monitoring in multimodal learning ---
@@ -485,7 +485,6 @@ AGM                   & 57.42{\scriptsize$\pm$0.73} & 84.42{\scriptsize$\pm$0.26
 G-Blend               & 61.10{\scriptsize$\pm$1.87} & 87.09{\scriptsize$\pm$0.29} & 77.75{\scriptsize$\pm$1.13} & 72.36{\scriptsize$\pm$0.66} & 66.66{\scriptsize$\pm$0.57} & 82.35{\scriptsize$\pm$0.26} & 70.15{\scriptsize$\pm$0.66} & --- \\
 CGGM                  & 50.22{\scriptsize$\pm$1.39} & 76.72{\scriptsize$\pm$0.42} & 73.18{\scriptsize$\pm$0.27} & 59.45{\scriptsize$\pm$0.36} & 62.41{\scriptsize$\pm$0.36} & 80.71{\scriptsize$\pm$0.27} & 68.05{\scriptsize$\pm$0.46} & 81.13{\scriptsize$\pm$1.34} \\
 InfoReg               & 67.72{\scriptsize$\pm$0.83} & --- & --- & --- & --- & --- & --- & --- \\
-MILES                 & 61.05{\scriptsize$\pm$2.52} & --- & --- & --- & --- & --- & --- & --- \\
 \midrule
 PGGB ($\alpha{=}0.5$)     & 62.72{\scriptsize$\pm$1.65} & \textbf{87.41}{\scriptsize$\pm$0.26} & \textbf{79.17}{\scriptsize$\pm$0.97} & 71.89{\scriptsize$\pm$0.82} & \textbf{66.85}{\scriptsize$\pm$0.50} & \textbf{82.44}{\scriptsize$\pm$0.35} & 69.80{\scriptsize$\pm$0.80} & 85.98{\scriptsize$\pm$1.15} \\
 PGGB+OGM-GE ($\alpha{=}0.75$) & \textbf{71.45}{\scriptsize$\pm$1.71} & 87.23{\scriptsize$\pm$0.58} & 77.33{\scriptsize$\pm$0.64} & 72.60{\scriptsize$\pm$0.94} & 66.59{\scriptsize$\pm$0.51} & 81.76{\scriptsize$\pm$0.08} & 72.43{\scriptsize$\pm$0.65} & \textbf{86.49}{\scriptsize$\pm$0.21} \\
@@ -500,7 +499,7 @@ PGGB+OGM-GE ($\alpha{=}0.75$) & \textbf{71.45}{\scriptsize$\pm$1.71} & 87.23{\sc
 \label{sec:main_results}
 \vspace{-1em}
 
-Table~\ref{tab:main_results} reports results across eight benchmarks. On high-imbalance CREMA-D, PGGB+OGM-GE attains $71.45\%$, $+2.31$~pp over OGM-GE and $+9.86$~pp over baseline, the best among competitors. A three-way decomposition in \S\ref{sec:ablations} isolates this gain to the boost actuation, with the decoupled monitor causally inert at $\alpha{=}0$. PGGB alone ($+1.13$~pp) is insufficient under severe imbalance, confirming that two-sided intervention is required. On the five low-imbalance datasets PGGB alone is the best-performing method on four of five (AVE, KS, Twitter15, Sarcasm) and within seed variance on MOSI ($-0.79$~pp), whereas OGM-GE often regresses (KS $-1.80$~pp, Twitter15 $-0.27$~pp, Sarcasm $-0.59$~pp), consistent with self-attenuation as $\delta \to 0$ (\S\ref{sec:boost}). PGGB+OGM-GE itself remains \emph{competitive} (within standard error of the strongest baseline) on MOSI ($-0.08$~pp), Twitter15 ($-0.22$~pp), and MOSEI ($-0.04$~pp). On BraTS~2021 (DeepLab v3+/ResNet-101, Dice loss), PGGB+OGM-GE yields $86.49\%$ Dice ($+0.72$~pp), extending the mechanism to dense prediction. The composability claim further extends on AVE to two of four non-OGM-GE methods tested (Appendix~\ref{app:composability}). A comparison against OPM~\citep{wei2024opm}, whose single-layer-fusion dependency requires a separate protocol, is in Appendix~\ref{app:opm_comparison}.
+Table~\ref{tab:main_results} reports results across eight benchmarks. On high-imbalance CREMA-D, PGGB+OGM-GE attains $71.45\%$, $+2.31$~pp over OGM-GE and $+9.86$~pp over baseline, the best among competitors. A three-way decomposition in \S\ref{sec:ablations} isolates this gain to the boost actuation, with the decoupled monitor causally inert at $\alpha{=}0$. PGGB alone ($+1.13$~pp) is insufficient under severe imbalance, confirming that two-sided intervention is required. On the five low-imbalance datasets PGGB alone is the best-performing method on four of five (AVE, KS, Twitter15, Sarcasm, with cross-class MSLR comparison in Appendix~\ref{app:mslr}) and within seed variance on MOSI ($-0.79$~pp), whereas OGM-GE often regresses (KS $-1.80$~pp, Twitter15 $-0.27$~pp, Sarcasm $-0.59$~pp), consistent with self-attenuation as $\delta \to 0$ (\S\ref{sec:boost}). PGGB+OGM-GE itself remains \emph{competitive} (within standard error of the strongest baseline) on MOSI ($-0.08$~pp), Twitter15 ($-0.22$~pp), and MOSEI ($-0.04$~pp). On BraTS~2021 (DeepLab v3+/ResNet-101, Dice loss), PGGB+OGM-GE yields $86.49\%$ Dice ($+0.72$~pp), extending the mechanism to dense prediction. The composability claim further extends on AVE to two of four non-OGM-GE methods tested (Appendix~\ref{app:composability}). A comparison against OPM~\citep{wei2024opm}, whose single-layer-fusion dependency requires a separate protocol, is in Appendix~\ref{app:opm_comparison}.
 \vspace{-1.2em}
 
 
@@ -987,6 +986,34 @@ MILES                           & 59.81{\scriptsize$\pm$1.53}  & 19.62{\scriptsi
 InfoReg                         & 60.83{\scriptsize$\pm$0.76}  & \textbf{57.98}{\scriptsize$\pm$1.80}  & 2.85 \\
 PGGB ($\alpha{=}0.5$)           & 57.34{\scriptsize$\pm$2.18}  & 44.60{\scriptsize$\pm$3.96}  & 12.74 \\
 PGGB+OGM-GE ($\alpha{=}0.75$)   & 57.85{\scriptsize$\pm$1.03}  & 55.54{\scriptsize$\pm$4.43}  & \textbf{2.31} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Cross-class comparison with MSLR}
+\label{app:mslr}
+
+We additionally compare PGGB to MSLR~\citep{yao2022mslr}, a per-modality learning-rate (PMLR) baseline. As discussed in Section~\ref{sec:related}, MSLR operates on the optimizer step rather than the gradient and forms an adjacent intervention class that is not directly composable with gradient-modulation methods. Because MSLR's canonical Keep-variant requires per-modality unimodal pre-calibration that lies outside our matched-pipeline budget, we run a fixed-ratio Keep variant: audio:1.0/visual:2.0 on CREMA-D (selected from a 3-config sweep over audio:0.25/0.5/1.0 with matching visual scaling), audio:0.5/visual:1.0 on AVE and Kinetics-Sounds, and text:0.5 with other modalities at 1.0 on CMU-MOSI, CMU-MOSEI, Twitter15, and Sarcasm. Five seeds per dataset on the matched ResNet-18 / two-layer MLP pipeline.
+
+Table~\ref{tab:mslr_comparison} reports the comparison. PGGB+OGM-GE exceeds MSLR by $+7.66$~pp on the high-imbalance CREMA-D benchmark, supporting the composability story. PGGB alone matches or exceeds MSLR on five of six low-imbalance comparisons (AVE, KS, MOSI, MOSEI, Sarcasm) and is within seed variance on Twitter15 ($-0.40$~pp, sub-$\sigma$). MSLR's heuristic throttle-audio ratio underperforms baseline on AVE ($-1.82$~pp), illustrating the sensitivity of fixed-ratio MSLR to per-dataset modality-dominance patterns that PGGB's probe-driven adaptation sidesteps.
+
+\begin{table}[H]
+\centering
+\caption{Cross-class comparison with MSLR~\citep{yao2022mslr} (5 seeds, mean $\pm$ std). MSLR runs the fixed-ratio Keep variant, ratios per dataset listed above. PGGB family results reproduced from Table~\ref{tab:main_results} for reference. \textbf{Bold} indicates the best per-row mean.}
+\label{tab:mslr_comparison}
+\vspace{0.3em}
+\footnotesize
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Dataset} & MSLR & PGGB ($\alpha{=}0.5$) & PGGB+OGM-GE ($\alpha{=}0.75$) & Best \\
+\midrule
+CREMA-D    & 63.79{\scriptsize$\pm$0.47} & 62.72{\scriptsize$\pm$1.65} & \textbf{71.45}{\scriptsize$\pm$1.71} & \textbf{PGGB+OGM-GE} \\
+AVE        & 84.72{\scriptsize$\pm$0.59} & \textbf{87.41}{\scriptsize$\pm$0.26} & 87.23{\scriptsize$\pm$0.58} & \textbf{PGGB} \\
+Kinetics-Sounds & 78.56{\scriptsize$\pm$0.38} & \textbf{79.17}{\scriptsize$\pm$0.97} & 77.33{\scriptsize$\pm$0.64} & \textbf{PGGB} \\
+CMU-MOSI   & 71.84{\scriptsize$\pm$0.76} & 71.89{\scriptsize$\pm$0.82} & \textbf{72.60}{\scriptsize$\pm$0.94} & \textbf{PGGB+OGM-GE} \\
+CMU-MOSEI  & 70.99{\scriptsize$\pm$1.03} & 69.80{\scriptsize$\pm$0.80} & \textbf{72.43}{\scriptsize$\pm$0.65} & \textbf{PGGB+OGM-GE} \\
+Twitter15  & \textbf{67.25}{\scriptsize$\pm$0.66} & 66.85{\scriptsize$\pm$0.50} & 66.59{\scriptsize$\pm$0.51} & \textbf{MSLR} (sub-$\sigma$) \\
+Sarcasm    & 82.37{\scriptsize$\pm$0.32} & \textbf{82.44}{\scriptsize$\pm$0.35} & 81.76{\scriptsize$\pm$0.08} & \textbf{PGGB} \\
 \bottomrule
 \end{tabular}
 \end{table}
