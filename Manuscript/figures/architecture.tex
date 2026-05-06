@@ -95,7 +95,7 @@
 % ===================== Probe-flow lines (SPLIT, SOLID, COLOURED) =====================
 % Audio probe flow: solid blue line from z_a (with stop-grad badge BELOW the wire) to Probe h_a.
 % Stop-grad badge is anchored BELOW the horizontal segment so it does not cut the line.
-\draw[parraud]
+\draw[parraud, preaction={draw=white, line width=3.5pt, -}]
     (za.south) -- ++(0,-0.25)
               -| ([xshift=-0.45cm]xv.west)
               |- ([yshift=-0.55cm]fv.south -| pa)
@@ -122,10 +122,12 @@
 % (instead of a Bezier whose belly can graze \bar{P}_v's south edge mid-sweep)
 % guarantees no intersection with the visual probe nodes at any point.
 \coordinate (audRailY) at ([yshift=-0.45cm]Pv.south);
+\coordinate (audEntry) at ([yshift=-0.32cm]boost.west);
 \draw[parraud, rounded corners=4pt]
     (Pa.south) -- (Pa.south |- audRailY)
-              -- (boostWrap.west |- audRailY)
-              -- (boostWrap.west);
+              -- ([xshift=-0.3cm]audEntry |- audRailY)
+              -- ([xshift=-0.3cm]audEntry)
+              -- (audEntry);
 
 \coordinate (railTopY) at ([yshift=0.7cm]fa.north);
 \coordinate (railR) at (boost.north |- railTopY);

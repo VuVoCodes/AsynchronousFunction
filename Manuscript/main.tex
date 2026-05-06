@@ -279,10 +279,10 @@ We attach a lightweight linear probe $\probe_m\colon \mathbb{R}^d \to \mathbb{R}
 \loss_{\text{probe},m} = \mathrm{CE}\!\bigl(\probe_m(\sg[\mathbf{z}_m];\,\psi_m),\; y\bigr).
 \end{equation}
 %
-Each probe has its own optimizer that updates only $\psi_m$, and no gradient flows into $\theta_m$. Since $\sg[\mathbf{z}_m]$ halts backward propagation at the feature level, $\loss_{\text{probe},m}$ depends only on the quality of $\mathbf{z}_m$ as a representation, not on how it contributes through $g$. This is precisely why decoupling matters: the probe accuracy $P_m$ measures representation quality not influenced by the dominant modality's influence on $g$.
+Each probe has its own optimizer that updates only $\psi_m$, and no gradient flows into $\theta_m$. Since $\sg[\mathbf{z}_m]$ halts backward propagation at the feature level, $\loss_{\text{probe},m}$ depends only on the quality of $\mathbf{z}_m$ as a representation, not on how it contributes through $g$. This is precisely why decoupling matters: the probe accuracy $P_m$ measures representation quality not influenced by the dominant modality.
 
 \paragraph{Split-batch evaluation and on-the-fly estimation.}
-Every $K$ training iteration (we use $K{=}20$), we partition the (shuffled) mini-batch into two disjoint halves, training probes on the first half and evaluating on the second. This yields a \emph{conditionally unbiased} estimate $P_m$ of the current probe's training-distribution accuracy (conditioned on $\psi_m^{(t)}$), since the evaluation half is held out from probe training and drawn i.i.d.\ from the training distribution. To convert this per-evaluation sample into a stable estimator, we accumulate an exponential moving average:
+Every $K$ training iteration, we partition the (shuffled) mini-batch into two disjoint halves, training probes on the first half and evaluating on the second. This yields a \emph{conditionally unbiased} estimate $P_m$ of the current probe's training-distribution accuracy (conditioned on $\psi_m^{(t)}$), the evaluation half is held out from probe training and drawn i.i.d.\ from the training distribution. To convert this per-evaluation sample into a stable estimator, we accumulate an exponential moving average (EMA):
 %
 \begin{equation}
 \label{eq:ema_probe}
@@ -313,10 +313,10 @@ For each modality $m$, we compute a normalized weakness score $w_m \in [0,1]$ (z
 w_m = \frac{\max_j\,\bar{P}_j - \bar{P}_m}{\max_j\,\bar{P}_j - \min_j\,\bar{P}_j + \epsilon},
 \end{equation}
 %
-with $\epsilon = 10^{-8}$ as a numerical guard against division by zero.
+with $\epsilon$ as a small positive constant serving as a numerical guard against division by zero.
 
 \paragraph{Step 2: Boost scale.}
-We convert $w_m$ to a multiplicative scaling factor:
+$w_m$ is converted to a multiplicative scaling factor:
 %
 \begin{equation}
 \label{eq:boost_scale}
@@ -333,7 +333,7 @@ To avoid abrupt changes in the boost signal, we apply temporal smoothing to the 
 \bar{s}_m \leftarrow \mu \cdot s_m + (1 - \mu) \cdot \bar{s}_m,
 \end{equation}
 %
-with momentum $\mu = 0.3$. The smoothed scales are applied to the encoder gradients \emph{after} the backward pass and \emph{before} the optimizer step:
+where $\mu \in (0,1)$ is the EMA smoothing coefficient on the boost scales (set in Section~\ref{sec:experiments}). The smoothed scales are applied to the encoder gradients \emph{after} the backward pass and \emph{before} the optimizer step:
 %
 \begin{equation}
 \label{eq:gradient_mod}
@@ -394,7 +394,7 @@ Following established practice for auxiliary unimodal supervision~\citep{guo2024
 \loss = \loss_{\text{fusion}} + \gamma \sum_{m=1}^{M} \mathrm{CE}\!\bigl(g_m(\mathbf{z}_m),\; y\bigr),
 \end{equation}
 %
-with $\gamma = 1.0$ by default in our experiments.
+where $\gamma$ is a scalar weight on the per-modality auxiliary cross-entropy terms (set in Section~\ref{sec:experiments}).
 
 
 %---------- 3.5 Safety Properties ----------
