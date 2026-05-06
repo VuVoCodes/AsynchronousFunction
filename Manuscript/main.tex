@@ -228,7 +228,7 @@ Linear probes on frozen representations~\citep{alain2017understanding} are a sta
 \section{Probe-Guided Gradient Boosting}
 \label{sec:method}
 
-We present PGGB in four stages: problem formulation (\S\ref{sec:problem}), decoupled probe monitoring (\S\ref{sec:probes}), the boost mechanism (\S\ref{sec:boost}), and composability with existing balancing methods (\S\ref{sec:compose}). Algorithm~\ref{alg:pgb} summarizes the complete training procedure. Figure~\ref{fig:architecture} traces the data flow: the top row depicts the forward path (\S\ref{sec:problem}), the dashed bottom row depicts probe monitoring on stop-gradient features (\S\ref{sec:probes}), and the green boost block plus actuation rail depict the gradient-modification mechanism (\S\ref{sec:boost}). Composition with throttling (\S\ref{sec:compose}) is described in text only.
+We present PGGB in four stages: problem formulation (\S\ref{sec:problem}), decoupled probe monitoring (\S\ref{sec:probes}), the boost mechanism (\S\ref{sec:boost}), and composability with existing balancing methods (\S\ref{sec:compose}). Algorithm~\ref{alg:pgb} summarizes the complete training procedure. Figure~\ref{fig:architecture} traces the data flow: the top panel depicts the forward path (\S\ref{sec:problem}), the bottom panel depicts probe monitoring on stop-gradient features (\S\ref{sec:probes}), and the green boost block plus actuation rail depict the gradient-modification mechanism (\S\ref{sec:boost}). Composition with throttling (\S\ref{sec:compose}) is described in text only.
 
 %---------- 3.1 Problem Formulation ----------
 \subsection{Problem formulation}
@@ -262,7 +262,7 @@ The term ${\partial \loss_{\text{fusion}}}/{\partial g}$ is shared across all mo
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.95\textwidth]{figures/architecture.pdf}
-\caption{Illustration of probe-guided gradient boosting on 2 modalities. \textbf{Top row:} encoder features $\mathbf{z}_m$ are concatenated and classified via the shared fusion classifier $g$, producing $\loss$. \textbf{Bottom row:} stop-gradient features $\sg[\mathbf{z}_m]$ are evaluated by linear probes (dashed green), yielding per-modality accuracies $\bar{P}_m$. The boost block computes the relative-gap weight $w_m$, an EMA-smoothed scale $\bar{s}_m$ refreshed only at probe-evaluation events (every $K$ steps, held constant in between), and clips it at $s_{\max}$. The actuation rail (thick green) applies $\bar{s}_m$ to the per-modality gradient $\nabla_{\!\theta_m}\loss$ before the optimizer step. Probes never backpropagate into encoders, so the monitoring signal is structurally decoupled from the fusion objective.}
+\caption{An Illustration of probe-guided gradient boosting on 2 modalities. \textbf{Top panel:} features $\mathbf{z}_m$ are concatenated and classified via the shared fusion classifier $g$, producing $\loss$. \textbf{Bottom panel:} stop-gradient features $\sg[\mathbf{z}_m]$ are evaluated by linear probes along solid per-modality probe-flow lines (audio in blue, visual in orange), yielding per-modality accuracies $\bar{P}_m$. The boost block computes the relative-gap weight $w_m$ and a smoothed scale $\bar{s}_m$ (EMA-smoothed, refreshed only at probe-evaluation events every $K$ steps and held constant in between), clipped at $s_{\max}$. The actuation rail (thick green) applies $\bar{s}_m$ to the per-modality gradient $\nabla_{\!\theta_m}\loss$. Probes never backpropagate into encoders, so the monitoring signal is structurally decoupled from the fusion objective.}
 \label{fig:architecture}
 \end{figure}
 
