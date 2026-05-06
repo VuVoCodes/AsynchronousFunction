@@ -20,7 +20,10 @@
                 font=\small, align=center, inner sep=4pt},
     arr/.style={->, thick},
     farr/.style={->, thick},
-    darr/.style={->, thick, dashed, probegr},
+    % Probe-flow lines: solid, per-modality colors (split into audio/visual)
+    parr/.style={->, thick},
+    parraud/.style={->, thick, audblue},
+    parrvis/.style={->, thick, visora},
     barr/.style={->, very thick, probegr},
     btag/.style={fill=probegr!15, draw=probegr, rounded corners=1pt,
                  font=\scriptsize, inner sep=2pt, text=black},
@@ -37,6 +40,10 @@
 \node[box, fill=visora!12, draw=visora!70, right=0.55cm of xv, minimum width=2.05cm] (fv)
     {Encoder $\encoder_v$};
 \node[box, fill=visora!12, draw=visora!70, right=0.55cm of fv] (zv) {$\mathbf{z}_v$};
+
+% Mark x_a / x_v as ORIGINAL inputs explicitly (clarifies that no stop-grad sits on the input wire).
+\node[font=\scriptsize\itshape, anchor=south, audblue!85] at ([yshift=0.05cm]xa.north) {original input};
+\node[font=\scriptsize\itshape, anchor=north, visora!85] at ([yshift=-0.05cm]xv.south) {original input};
 
 \node[box, fill=gray!8, draw=gray!50,
       right=1.0cm of $(za.east)!0.5!(zv.east)$] (concat) {$[\,;\,]$};
@@ -75,43 +82,68 @@
 \node[box, fill=probegr!8, draw=probegr, dashed,
       right=0.25cm of pv, inner sep=3pt, minimum width=0.7cm] (Pv) {$\bar{P}_v$};
 
+% --- Boost block: equation interior + explicit titled wrapper ---------------
 \node[box, fill=probegr!12, draw=probegr, align=center,
       right=0.55cm of Pv, inner sep=5pt, minimum width=4.4cm] (boost)
     {$w_m = \dfrac{\max_j \bar{P}_j - \bar{P}_m}{\max_j \bar{P}_j - \min_j \bar{P}_j + \epsilon}$\\[3pt]
      $\bar{s}_m \xleftarrow{\;\text{EMA, every } K \text{ steps}\;} 1 + \alpha\, w_m,\;\;\bar{s}_m \le s_{\max}$};
+% Header label "Boost block" sits above the equation node.
+\node[font=\small\bfseries, probegr, anchor=south]
+    at ([yshift=0.08cm]boost.north) {Boost block};
+% Outer dashed wrapper visually delineates the block.
+\begin{scope}[on background layer]
+\node[draw=probegr!80, dashed, rounded corners=3pt,
+      fit=(boost), inner sep=4pt] (boostWrap) {};
+\end{scope}
 
-\draw[darr]
+% ===================== Probe-flow lines (SPLIT, SOLID, COLOURED) =====================
+% Audio probe flow: solid blue line from z_a (with stop-grad badge BELOW the wire) to Probe h_a.
+% Stop-grad badge is anchored BELOW the horizontal segment so it does not cut the line.
+\draw[parraud]
     (za.south) -- ([yshift=-0.55cm]fv.south -| za)
               -- ([yshift=-0.55cm]fv.south -| pa)
-              -- (pa.north)
-    node[sgbadge, pos=0.62] {stop-grad};
-\draw[darr] (zv.south) -- (pv.north)
-    node[sgbadge, pos=0.55] {stop-grad};
+              -- (pa.north);
+\node[sgbadge, anchor=north, fill=white, draw=audblue!70, text=audblue!90]
+    at ([yshift=-0.18cm]$([yshift=-0.55cm]fv.south -| za)!0.5!([yshift=-0.55cm]fv.south -| pa)$)
+    {$\mathrm{sg}[\mathbf{z}_a]$};
 
-\draw[darr] (pa.east) -- (Pa.west);
-\draw[darr] (pv.east) -- (Pv.west);
+% Visual probe flow: solid orange line from z_v straight down to Probe h_v.
+\draw[parrvis] (zv.south) -- (pv.north);
+\node[sgbadge, anchor=west, fill=white, draw=visora!70, text=visora!95]
+    at ([xshift=0.12cm]$(zv.south)!0.5!(pv.north)$)
+    {$\mathrm{sg}[\mathbf{z}_v]$};
 
-\draw[darr] (Pv.east) -- (boost.west);
-\draw[darr] (Pa.north) to[out=60,in=180] (boost.north west);
+% Probe -> per-modality accuracy boxes (keep modality colours).
+\draw[parraud] (pa.east) -- (Pa.west);
+\draw[parrvis] (pv.east) -- (Pv.west);
+
+% Accuracies feed the Boost block.
+\draw[parrvis] (Pv.east) -- (boost.west);
+\draw[parraud] (Pa.north) to[out=60,in=180] (boost.north west);
 
 \coordinate (railTopY) at ([yshift=0.7cm]fa.north);
 \coordinate (railR) at (boost.north |- railTopY);
 \coordinate (railL) at (bfa.north |- railTopY);
 
+% Boost actuation rail: from Boost block up over the top to the gradient-boost tags.
+% Note: actuation modifies the GRADIENT (nabla L * s_bar) at the optimizer step,
+% NOT z or f. The arrow target is the bfa/bfv gradient-boost nodes, not z or f.
 \draw[barr, rounded corners=3pt]
-    (boost.north) -- (boost.north |- railTopY)
+    (boostWrap.north) -- (boostWrap.north |- railTopY)
                   -- (railL)
                   -- (bfa.north);
 
 \draw[barr] (bfa.south) -- (bfv.north);
 
 \node[font=\small\itshape, probegr, anchor=south]
-    at ([yshift=0.05cm]$(railL)!0.5!(railR)$) {boost actuation};
+    at ([yshift=0.05cm]$(railL)!0.5!(railR)$) {boost actuation (applied to $\nabla_{\!\theta_m}\loss$)};
 
-\coordinate (legendAnchor) at ([yshift=-1.0cm]pa.south -| concat);
+% ===================== Legend =====================
+\coordinate (legendAnchor) at ([yshift=-1.1cm]pa.south -| concat);
 \node[anchor=north, font=\scriptsize, inner sep=2pt] at (legendAnchor) {%
   \tikz[baseline=-0.6ex]\draw[->,thick] (0,0)--(0.5,0);~forward \quad
-  \tikz[baseline=-0.6ex]\draw[->,thick,dashed,probegr] (0,0)--(0.5,0);~monitor (no grad) \quad
+  \tikz[baseline=-0.6ex]\draw[->,thick,audblue] (0,0)--(0.5,0);~audio probe flow (sg) \quad
+  \tikz[baseline=-0.6ex]\draw[->,thick,visora] (0,0)--(0.5,0);~visual probe flow (sg) \quad
   \tikz[baseline=-0.6ex]\draw[->,very thick,probegr] (0,0)--(0.5,0);~boost actuation \quad
   \fcolorbox{probegr}{probegr!15}{\scriptsize$\times\bar{s}_m$}~weak-modality amplification
 };
