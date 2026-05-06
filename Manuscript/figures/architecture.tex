@@ -95,11 +95,22 @@
 % ===================== Probe-flow lines (SPLIT, SOLID, COLOURED) =====================
 % Audio probe flow: solid blue line from z_a (with stop-grad badge BELOW the wire) to Probe h_a.
 % Stop-grad badge is anchored BELOW the horizontal segment so it does not cut the line.
+% Bridge/hop at the crossing with the green boost-actuation rail beneath f_v:
+% the blue vertical descent (at x = xv.west - 0.45cm) crosses the green horizontal
+% at y = fv.south - 0.4cm. We replace a tiny window of the straight descent with
+% a small Bezier hop that bulges left, so the blue wire visibly passes OVER green.
+\coordinate (audCol)    at ([xshift=-0.45cm]xv.west);
+\coordinate (audHopTop) at ($(audCol |- fv.south) + (0,-0.22)$);
+\coordinate (audHopBot) at ($(audCol |- fv.south) + (0,-0.58)$);
+\coordinate (audHopCt1) at ($(audHopTop) + (-0.22,-0.05)$);
+\coordinate (audHopCt2) at ($(audHopBot) + (-0.22, 0.05)$);
 \draw[parraud, preaction={draw=white, line width=3.5pt, -}]
     (za.south) -- ++(0,-0.25)
-              -| ([xshift=-0.45cm]xv.west)
-              |- ([yshift=-0.55cm]fv.south -| pa)
-              -- (pa.north);
+              -| (audHopTop)
+              .. controls (audHopCt1) and (audHopCt2) ..
+              (audHopBot)
+              -- ($(audCol |- fv.south) + (0,-0.55)$)
+              -| (pa.north);
 \node[sgbadge, anchor=east, fill=white, draw=audblue!70, text=audblue!90]
     at ([xshift=-0.05cm, yshift=0.1cm]xv.west) {$\mathrm{sg}[\mathbf{z}_a]$};
 
