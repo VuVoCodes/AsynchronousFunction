@@ -272,7 +272,7 @@ The term ${\partial \loss_{\text{fusion}}}/{\partial g}$ is shared across all mo
 \subsection{Decoupled probe monitoring}
 \label{sec:probes}
 
-We attach a lightweight linear probe classifier $\probe_m\colon \mathbb{R}^d \to \mathbb{R}^C$ (with $C$ classes) to each encoder, parameterized by $\psi_m$. The resulting probe accuracies define an imbalance signal, the \emph{utilization gap} (Eq.~\ref{eq:utilization_gap}), independent of the joint training objective. The probes are trained on stop-gradient features $\sg[\mathbf{z}_m]$, where $\sg[\cdot]$ denotes the stop-gradient operator~\citep{vandenoord2017vqvae} (identity at the forward pass, zero partial derivatives at the backward pass):
+We attach a lightweight linear probe classifier $\probe_m\colon \mathbb{R}^d \to \mathbb{R}^C$ (with $C$ outputs) to each encoder, parameterized by $\psi_m$. The resulting probe accuracies define an imbalance signal, the \emph{utilization gap} (Eq.~\ref{eq:utilization_gap}), independent of the joint training objective. The probes are trained on stop-gradient features $\sg[\mathbf{z}_m]$, where $\sg[\cdot]$ denotes the stop-gradient operator~\citep{vandenoord2017vqvae} (identity at the forward pass, zero partial derivatives at the backward pass):
 %
 \begin{equation}
 \label{eq:probe_loss}
