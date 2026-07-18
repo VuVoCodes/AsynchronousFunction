@@ -123,7 +123,7 @@ We propose \emph{probe-guided gradient boosting} (PGGB): lightweight linear prob
 % --- P5: Main results (3 sentences) ---
 % Experiments on 6 datasets. Key quantitative results.
 
-We evaluate PGGB on eight benchmarks spanning audio-visual, sentiment, text-image, and medical-segmentation tasks (details in Section~\ref{sec:datasets}). The main gain is observed on the high-imbalance CREMA-D benchmark (3-frame), where composing PGGB with a representative gradient-modulation baseline~\citep{peng2022ogmge} reaches $71.45 \pm 1.71\%$ accuracy, $+2.31$~pp over the same baseline alone and $+9.86$~pp over joint training. On low-imbalance benchmarks, PGGB alone is the best-performing method on four of five low-imbalance datasets (Table~\ref{tab:main_results}). MOSI is the only low-imbalance dataset where PGGB alone trails the strongest baseline ($-0.79$~pp). The OGM-GE composition variant has two isolated regressions versus joint training (Kinetics-Sounds $-1.72$~pp, Sarcasm $-0.64$~pp) noted in Section~\ref{sec:conclusion}, while several gradient-modulation baselines degrade on multiple datasets (e.g., this baseline~\citep{peng2022ogmge} regresses on Kinetics-Sounds by $-1.80$~pp, Table~\ref{tab:main_results}).
+We evaluate PGGB on eight benchmarks spanning audio-visual, sentiment, text-image, and medical-segmentation tasks (details in Section~\ref{sec:datasets}). The main gain is observed on the high-imbalance CREMA-D benchmark (3-frame), where composing PGGB with a representative gradient-modulation baseline~\citep{peng2022ogmge} reaches $71.45 \pm 1.71\%$ accuracy, $+2.31$~pp over the same baseline alone and $+9.86$~pp over joint training. On the four low-imbalance benchmarks (AVE, Kinetics-Sounds, Twitter15, Sarcasm), PGGB alone is the best-performing method on all four (Table~\ref{tab:main_results}). On the high-imbalance text-dominant sentiment benchmarks (CMU-MOSI, CMU-MOSEI), where text alone is near-multimodally sufficient and prior balancing methods report only modest gains~\citep{li2023agm,wei2025dgl}, PGGB+OGM-GE remains within seed standard deviation of the strongest baseline ($-0.08$ and $-0.04$~pp). The OGM-GE composition variant has two isolated regressions versus joint training (Kinetics-Sounds $-1.72$~pp, Sarcasm $-0.64$~pp) noted in Section~\ref{sec:conclusion}, while several gradient-modulation baselines degrade on multiple datasets (e.g., this baseline~\citep{peng2022ogmge} regresses on Kinetics-Sounds by $-1.80$~pp, Table~\ref{tab:main_results}).
 
 % --- Contributions (4 bullets) ---
 \paragraph{Contributions.}
@@ -134,7 +134,7 @@ We evaluate PGGB on eight benchmarks spanning audio-visual, sentiment, text-imag
 
     \item We introduce \emph{PGGB}, one instantiation that converts the monitoring signal into a bounded multiplicative scaling on the weaker encoder's gradients. It is composable with existing throttling methods (Appendix~\ref{app:composability} validates non-destructive composition with four such methods).
 
-    \item We validate \emph{PGGB} on eight benchmarks spanning audio-visual, sentiment, text-image, and medical-segmentation tasks. \emph{PGGB} composed with throttling outperforms state-of-the-art baselines on high-imbalance audio-visual (CREMA-D) and matches the strongest available baseline on medical segmentation (BraTS~2021, $+0.28$~pp, within seed variance), and \emph{PGGB} used alone is the best-performing method on four of five low-imbalance datasets and within seed variance on MOSI.
+    \item We validate \emph{PGGB} on eight benchmarks spanning audio-visual, sentiment, text-image, and medical-segmentation tasks. \emph{PGGB} composed with throttling outperforms state-of-the-art baselines on high-imbalance audio-visual (CREMA-D), matches the strongest available baseline on medical segmentation (BraTS~2021, $+0.28$~pp, within seed variance), and remains competitive within seed variance on the high-imbalance text-dominant sentiment benchmarks (CMU-MOSI, CMU-MOSEI), and \emph{PGGB} used alone is the best-performing method on all four low-imbalance datasets (AVE, Kinetics-Sounds, Twitter15, Sarcasm).
 \end{itemize}
 
 
@@ -228,7 +228,7 @@ Linear probes on frozen representations~\citep{alain2017understanding} are a sta
 \section{Probe-Guided Gradient Boosting}
 \label{sec:method}
 
-We present PGGB in four stages: problem formulation (\S\ref{sec:problem}), decoupled probe monitoring (\S\ref{sec:probes}), the boost mechanism (\S\ref{sec:boost}), and composability with existing balancing methods (\S\ref{sec:compose}). Algorithm~\ref{alg:pgb} summarizes the complete training procedure. Figure~\ref{fig:architecture} traces the data flow: the top panel depicts the forward path (\S\ref{sec:problem}), the bottom panel depicts probe monitoring on stop-gradient features (\S\ref{sec:probes}), and the green boost block plus actuation rail depict the gradient-modification mechanism (\S\ref{sec:boost}). Composition with throttling (\S\ref{sec:compose}) is described in text only.
+We present PGGB in four stages: problem formulation (\S\ref{sec:problem}), decoupled probe monitoring (\S\ref{sec:probes}), the boost mechanism (\S\ref{sec:boost}), and composability with existing balancing methods (\S\ref{sec:compose}). Figure~\ref{fig:architecture} traces the data flow: the top panel depicts the forward path (\S\ref{sec:problem}), the bottom panel depicts probe monitoring on stop-gradient features (\S\ref{sec:probes}), and the green boost block plus actuation rail depict the gradient-modification mechanism (\S\ref{sec:boost}). Composition with throttling is described in (\S\ref{sec:compose}).
 
 %---------- 3.1 Problem Formulation ----------
 \subsection{Problem formulation}
@@ -241,7 +241,7 @@ Each multimodal sample comprises $M$ inputs $\{\mathbf{x}_m\}_{m=1}^{M}$, one pe
 \mathbf{z}_m = \encoder_m(\mathbf{x}_m;\,\theta_m) \in \mathbb{R}^d.
 \end{equation}
 %
-Each $\mathbf{z}_m$ is a $d$-dimensional real value vector with $d$ common across modalities. The features are concatenated and passed through a fusion head $g$ parameterized by $\phi$, yielding the prediction $\hat{y} = g([\mathbf{z}_1;\ldots;\mathbf{z}_M];\,\phi)$. With ground-truth target $y$, training minimizes a task-appropriate fusion loss:
+Each $\mathbf{z}_m$ is a real value feature vector in $\mathbb{R}^d$, with $d$ common across modalities. 
 %
 \begin{equation}
 \label{eq:joint_loss}
@@ -303,7 +303,7 @@ Appendix~\ref{app:probe_stability} verifies empirically that the EMA estimator s
 \subsection{Probe-guided gradient boosting}
 \label{sec:boost}
 
-Given the EMA-smoothed probe accuracies $\{\bar{P}_m\}_{m=1}^{M}$ (Eq.~\ref{eq:ema_probe}), we compute a per-modality boost scale that amplifies the gradients of weaker encoders (Algorithm~\ref{alg:pgb}). The procedure involves three steps.
+Given the EMA-smoothed probe accuracies $\{\bar{P}_m\}_{m=1}^{M}$ (Eq.~\ref{eq:ema_probe}), we compute a per-modality boost scale that amplifies the gradients of weaker encoders (full pseudocode in Appendix~\ref{app:algorithm}, Algorithm~\ref{alg:pgb}). The procedure involves three steps.
 
 \paragraph{Step 1: Relative weakness.}
 For each modality $m$, we compute a normalized weakness score $w_m \in [0,1]$ (zero for the strongest modality, one for the weakest):
@@ -340,37 +340,6 @@ where $\mu \in (0,1)$ is the EMA smoothing coefficient on the boost scales (set 
 \frac{\partial \loss}{\partial \theta_m} \leftarrow \bar{s}_m \cdot \frac{\partial \loss}{\partial \theta_m}.
 \end{equation}
 %
-\begin{algorithm}[H]
-\caption{Probe-Guided Gradient Boosting (full training pass over $\mathcal{D}$). Notation: $P_m$ per-batch probe accuracy with smoothed estimate $\bar{P}_m$; $\phi$ fusion-head parameters; $\sg[\cdot]$ stop-gradient operator (\S\ref{sec:probes}). Auxiliary-loss weight $\gamma$ and optional OGM-GE throttle $\omega_m^{\text{ogm}} \leq 1$ are introduced in \S\ref{sec:compose}.}
-\label{alg:pgb}
-\begin{algorithmic}[1]
-\REQUIRE Training data $\mathcal{D}$, encoders $\{\encoder_m\}_{m=1}^M$, fusion head $g$, unimodal heads $\{g_m\}$, probes $\{\probe_m\}$
-\REQUIRE Boost strength $\alpha$, cap $s_{\max}$, smoothing coefficients $\beta$, $\mu$, probe interval $K$
-\REQUIRE Optional: OGM-GE throttle module
-\STATE Initialize $\bar{P}_m \leftarrow 0$, $\bar{s}_m \leftarrow 1$ for all $m$
-\FOR{each mini-batch $(\mathbf{x}, y) \in \mathcal{D}$}
-    \STATE \textbf{Forward:} $\mathbf{z}_m \leftarrow \encoder_m(\mathbf{x}_m;\,\theta_m)$ for all $m$
-    \STATE \textbf{Loss:} $\loss \leftarrow \ell(g([\mathbf{z}_1;\ldots;\mathbf{z}_M]), y) + \gamma \sum_m \ell_{\text{aux}}(g_m(\mathbf{z}_m), y)$
-    \STATE \textbf{Backward:} compute $\partial\loss/\partial\theta_m$ for all $m$
-    \IF{OGM-GE enabled}
-        \STATE Apply OGM-GE throttle: $\partial\loss/\partial\theta_m \leftarrow \omega_m^{\text{ogm}} \cdot \partial\loss/\partial\theta_m$
-    \ENDIF
-    \IF{iteration $\bmod\; K = 0$}
-        \STATE Split $(\mathbf{x}, y)$ into train half $(\mathbf{x}^{\text{tr}}, y^{\text{tr}})$ and eval half $(\mathbf{x}^{\text{ev}}, y^{\text{ev}})$
-        \FOR{each modality $m$}
-            \STATE Train $\probe_m$ on $(\sg[\mathbf{z}_m^{\text{tr}}],\; y^{\text{tr}})$ with separate optimizer
-            \STATE Evaluate: $P_m \leftarrow \text{Acc}(\probe_m(\sg[\mathbf{z}_m^{\text{ev}}]),\; y^{\text{ev}})$
-        \ENDFOR
-        \STATE Update $\bar{P}_m \leftarrow \beta \cdot P_m + (1-\beta) \cdot \bar{P}_m$ for all $m$
-        \STATE Compute $w_m$ via Eq.~\eqref{eq:weakness}, $s_m$ via Eq.~\eqref{eq:boost_scale} for all $m$
-        \STATE Update $\bar{s}_m \leftarrow \mu \cdot s_m + (1-\mu) \cdot \bar{s}_m$ for all $m$
-    \ENDIF
-    \STATE \textbf{Boost:} $\partial\loss/\partial\theta_m \leftarrow \bar{s}_m \cdot \partial\loss/\partial\theta_m$ for all $m$
-    \STATE \textbf{Optimizer step:} update $\theta_m$, $\phi$, and $\{g_m\}$ parameters
-\ENDFOR
-\end{algorithmic}
-\end{algorithm}
-
 
 %---------- 3.4 Composability with Gradient Throttling ----------
 \subsection{Composability with gradient throttling}
@@ -466,7 +435,7 @@ Classification uses concatenation fusion, batch size 64, 100 epochs. Audio-visua
 
 \textbf{Imbalance categorization.}
 \label{sec:imbalance_cat}
-We categorize datasets by the utilization gap $\delta$ (Eq.~\eqref{eq:utilization_gap}) measured during baseline training: \emph{high} ($\delta > 0.15$, CREMA-D), \emph{medium} ($0.05 < \delta \leq 0.15$, CMU-MOSEI and BraTS~2021), and \emph{low} ($\delta \leq 0.05$, AVE, KS, CMU-MOSI, Twitter15, and Sarcasm).
+We categorize benchmarks by the utilization gap $\delta$ (Eq.~\eqref{eq:utilization_gap}) measured during baseline training, with per-dataset values in Appendix~\ref{app:delta}: \emph{high-imbalance} ($\delta > 0.15$, CREMA-D, CMU-MOSI, CMU-MOSEI) and \emph{low-imbalance} ($\delta \leq 0.15$, AVE, KS, Twitter15, Sarcasm). BraTS~2021 is reported separately as a dense-prediction segmentation benchmark. The high-imbalance group is heterogeneous in source: CREMA-D imbalance arises from audio-dominance in emotion recognition~\citep{peng2022ogmge}, whereas CMU-MOSI/MOSEI imbalance reflects text-sufficiency, with text-only baselines within roughly $1$~pp of multimodal accuracy on CMU-MOSEI~\citep{li2023agm} and only a $+2.7$~pp multimodal gain on CMU-MOSI~\citep{wei2025dgl}. On these text-dominant benchmarks, balancing methods report only modest absolute gains~\citep{guo2024cggm,wei2024opm}, motivating within-seed-std competitiveness as the relevant metric.
 
 \begin{table}[H]
 \centering
@@ -499,7 +468,7 @@ PGGB+OGM-GE ($\alpha{=}0.75$) & \textbf{71.45}{\scriptsize$\pm$1.71} & 87.23{\sc
 \label{sec:main_results}
 \vspace{-1em}
 
-Table~\ref{tab:main_results} reports results across eight benchmarks. On high-imbalance CREMA-D, PGGB+OGM-GE attains $71.45\%$, $+2.31$~pp over OGM-GE and $+9.86$~pp over baseline, the best among competitors. A three-way decomposition in \S\ref{sec:ablations} isolates this gain to the boost actuation, with the decoupled monitor causally inert at $\alpha{=}0$. PGGB alone ($+1.13$~pp) is insufficient under severe imbalance, confirming that two-sided intervention is required. On the five low-imbalance datasets PGGB alone is the best-performing method on four of five (AVE, KS, Twitter15, Sarcasm, with cross-class MSLR comparison in Appendix~\ref{app:mslr}) and within seed variance on MOSI ($-0.79$~pp), whereas OGM-GE often regresses (KS $-1.80$~pp, Twitter15 $-0.27$~pp, Sarcasm $-0.59$~pp), consistent with self-attenuation as $\delta \to 0$ (\S\ref{sec:boost}). PGGB+OGM-GE itself remains \emph{competitive} (within standard error of the strongest baseline) on MOSI ($-0.08$~pp), Twitter15 ($-0.22$~pp), and MOSEI ($-0.04$~pp). On BraTS~2021 (DeepLab v3+/ResNet-101, Dice loss), PGGB+OGM-GE yields $86.49\%$ Dice ($+0.72$~pp), extending the mechanism to dense prediction. The composability claim further extends on AVE to two of four non-OGM-GE methods tested (Appendix~\ref{app:composability}). A comparison against OPM~\citep{wei2024opm}, whose single-layer-fusion dependency requires a separate protocol, is in Appendix~\ref{app:opm_comparison}.
+Table~\ref{tab:main_results} reports results across eight benchmarks. On high-imbalance CREMA-D, PGGB+OGM-GE attains $71.45\%$, $+2.31$~pp over OGM-GE and $+9.86$~pp over baseline, the best among competitors. A three-way decomposition in \S\ref{sec:ablations} isolates this gain to the boost actuation, with the decoupled monitor causally inert at $\alpha{=}0$. PGGB alone ($+1.13$~pp) is insufficient under severe imbalance, confirming that two-sided intervention is required. On the four low-imbalance benchmarks (AVE, KS, Twitter15, Sarcasm, with cross-class MSLR comparison in Appendix~\ref{app:mslr}), PGGB alone is the best-performing method on all four, whereas OGM-GE often regresses (KS $-1.80$~pp, Twitter15 $-0.27$~pp, Sarcasm $-0.59$~pp), consistent with self-attenuation as $\delta \to 0$ (\S\ref{sec:boost}). On the high-imbalance text-dominant sentiment benchmarks (CMU-MOSI, CMU-MOSEI), where text alone is near-multimodally sufficient and prior balancing methods report only modest absolute gains~\citep{li2023agm,wei2025dgl}, PGGB+OGM-GE remains within seed standard deviation of the strongest baseline (MOSI $-0.08$~pp, MOSEI $-0.04$~pp). On BraTS~2021 (DeepLab v3+/ResNet-101, Dice loss), PGGB+OGM-GE yields $86.49\%$ Dice ($+0.72$~pp), extending the mechanism to dense prediction. The composability claim further extends on AVE to two of four non-OGM-GE methods tested (Appendix~\ref{app:composability}). A comparison against OPM~\citep{wei2024opm}, whose single-layer-fusion dependency requires a separate protocol, is in Appendix~\ref{app:opm_comparison}.
 \vspace{-1.2em}
 
 
@@ -509,7 +478,6 @@ Table~\ref{tab:main_results} reports results across eight benchmarks. On high-im
 \vspace{-1em}
 
 We ablate on CREMA-D with single-frame visual input, which widens the modality gap and amplifies method differences (Table~\ref{tab:ablation}).
-\vspace{-1.2em}
 
 \begin{table}[H]
 \centering
@@ -611,7 +579,7 @@ We probe per-modality utilization with linear classifiers trained on frozen enco
 \section{Conclusion}
 \label{sec:conclusion}
 
-We propose PGGB, a method for balanced multimodal learning that amplifies weaker modalities while preserving stronger ones, composing naturally with existing throttling techniques. On low-imbalance settings, PGGB alone is the best-performing method on four of five benchmarks. On high-imbalance CREMA-D, composition with OGM-GE yields $+2.31$~pp over the strongest baseline. On medical segmentation (BraTS~2021), the same composition matches the strongest available baseline ($+0.28$~pp, within seed variance). \emph{Limitations.} Per-setting hyperparameter tuning is required, probes add small compute overhead, and composition with throttling can regress when the modality-dominance gap is small (Sarcasm $-0.64$~pp, Kinetics-Sounds $-1.72$~pp under PGGB+OGM-GE, and AVE-from-scratch $-4.56$~pp under specialized operating conditions, \S\ref{sec:operating_conditions}), a regime our theory does not cover. Compound gains from non-OGM-GE composition partners are observed only on AVE (two of four methods, Appendix~\ref{app:composability}). \emph{Future work.} Probe-driven adaptive composition that engages throttling only when the dominance gap warrants, automatic threshold adaptation, and extension beyond classification and segmentation. No new data is introduced, and \S\ref{sec:operating_conditions} should precede deployment.
+We propose PGGB, a method for balanced multimodal learning that amplifies the contribution of weaker modalities while preserving stronger ones, composing naturally with existing throttling techniques. PGGB alone is the best-performing method on all four low-imbalance benchmarks. On high-imbalance CREMA-D, composition with OGM-GE yields $+2.31$~pp over the strongest baseline, and on the text-dominant sentiment benchmarks (CMU-MOSI, CMU-MOSEI) the same composition remains within seed standard deviation of the strongest baseline. On medical segmentation (BraTS~2021), it matches the strongest available baseline ($+0.28$~pp, within seed variance). \emph{Limitations.} Per-setting tuning is required, probes add small compute overhead, and composition with throttling can regress when the dominance gap is small (worst case AVE-from-scratch $-4.56$~pp, \S\ref{sec:operating_conditions}), a regime our theory does not cover. \emph{Future work.} Probe-driven adaptive composition that engages throttling only when the dominance gap warrants, and extension beyond classification and segmentation. No new data is introduced, and \S\ref{sec:operating_conditions} should precede deployment.
 
 
 %=============================================================================
@@ -765,6 +733,43 @@ where $\Delta_{\loss} = \loss(\theta_0) - \loss^{*}$ and the last inequality use
 
 \paragraph{Interpretation.} Setting $\eta = \Theta(1/(s_{\max}\sqrt{T}))$ yields the rate $\mathcal{O}(s_{\max} \cdot \sigma / \sqrt{T} + s_{\max}^2 \cdot \Delta_{\loss} / T)$. For the default $s_{\max} = 2.0$, the effective variance increases by a factor of at most 4 relative to unmodified SGD. Proposition~\ref{prop:attenuation} guarantees that as modalities become $\Delta$-balanced, the boost scales approach unity within $\alpha \Delta / (\Delta + \epsilon)$ and this overhead vanishes in the limit $\Delta \to 0$, recovering the standard SGD convergence rate~\citep{ghadimi2013sgd} up to a constant variance inflation of at most $s_{\max}^2$.
 \end{proof}
+
+
+\subsection{Training algorithm pseudocode}
+\label{app:algorithm}
+
+Algorithm~\ref{alg:pgb} below specifies the full training pass referenced in Section~\ref{sec:boost}, making explicit how probe evaluation, weakness scoring, scale smoothing, and gradient boosting interleave with the forward and backward passes. The optional OGM-GE throttle line corresponds to the composition described in Section~\ref{sec:compose}.
+
+\begin{algorithm}[H]
+\caption{Probe-Guided Gradient Boosting (full training pass over $\mathcal{D}$). Notation: $P_m$ per-batch probe accuracy with smoothed estimate $\bar{P}_m$; $\phi$ fusion-head parameters; $\sg[\cdot]$ stop-gradient operator (\S\ref{sec:probes}). Auxiliary-loss weight $\gamma$ and optional OGM-GE throttle $\omega_m^{\text{ogm}} \leq 1$ are introduced in \S\ref{sec:compose}.}
+\label{alg:pgb}
+\begin{algorithmic}[1]
+\REQUIRE Training data $\mathcal{D}$, encoders $\{\encoder_m\}_{m=1}^M$, fusion head $g$, unimodal heads $\{g_m\}$, probes $\{\probe_m\}$
+\REQUIRE Boost strength $\alpha$, cap $s_{\max}$, smoothing coefficients $\beta$, $\mu$, probe interval $K$
+\REQUIRE Optional: OGM-GE throttle module
+\STATE Initialize $\bar{P}_m \leftarrow 0$, $\bar{s}_m \leftarrow 1$ for all $m$
+\FOR{each mini-batch $(\mathbf{x}, y) \in \mathcal{D}$}
+    \STATE \textbf{Forward:} $\mathbf{z}_m \leftarrow \encoder_m(\mathbf{x}_m;\,\theta_m)$ for all $m$
+    \STATE \textbf{Loss:} $\loss \leftarrow \ell(g([\mathbf{z}_1;\ldots;\mathbf{z}_M]), y) + \gamma \sum_m \ell_{\text{aux}}(g_m(\mathbf{z}_m), y)$
+    \STATE \textbf{Backward:} compute $\partial\loss/\partial\theta_m$ for all $m$
+    \IF{OGM-GE enabled}
+        \STATE Apply OGM-GE throttle: $\partial\loss/\partial\theta_m \leftarrow \omega_m^{\text{ogm}} \cdot \partial\loss/\partial\theta_m$
+    \ENDIF
+    \IF{iteration $\bmod\; K = 0$}
+        \STATE Split $(\mathbf{x}, y)$ into train half $(\mathbf{x}^{\text{tr}}, y^{\text{tr}})$ and eval half $(\mathbf{x}^{\text{ev}}, y^{\text{ev}})$
+        \FOR{each modality $m$}
+            \STATE Train $\probe_m$ on $(\sg[\mathbf{z}_m^{\text{tr}}],\; y^{\text{tr}})$ with separate optimizer
+            \STATE Evaluate: $P_m \leftarrow \text{Acc}(\probe_m(\sg[\mathbf{z}_m^{\text{ev}}]),\; y^{\text{ev}})$
+        \ENDFOR
+        \STATE Update $\bar{P}_m \leftarrow \beta \cdot P_m + (1-\beta) \cdot \bar{P}_m$ for all $m$
+        \STATE Compute $w_m$ via Eq.~\eqref{eq:weakness}, $s_m$ via Eq.~\eqref{eq:boost_scale} for all $m$
+        \STATE Update $\bar{s}_m \leftarrow \mu \cdot s_m + (1-\mu) \cdot \bar{s}_m$ for all $m$
+    \ENDIF
+    \STATE \textbf{Boost:} $\partial\loss/\partial\theta_m \leftarrow \bar{s}_m \cdot \partial\loss/\partial\theta_m$ for all $m$
+    \STATE \textbf{Optimizer step:} update $\theta_m$, $\phi$, and $\{g_m\}$ parameters
+\ENDFOR
+\end{algorithmic}
+\end{algorithm}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -991,12 +996,37 @@ PGGB+OGM-GE ($\alpha{=}0.75$)   & 57.85{\scriptsize$\pm$1.03}  & 55.54{\scriptsi
 \end{tabular}
 \end{table}
 
+\subsection{Per-dataset utilization gap}
+\label{app:delta}
+
+For transparency, we report the per-dataset utilization gap $\delta$ (Eq.~\eqref{eq:utilization_gap}) measured at the end of baseline training (final-epoch EMA-smoothed probe accuracy gap, averaged over 5 seeds). Probes follow the protocol of Section~\ref{sec:probes}: linear classifiers on stop-gradient encoder features, trained on a held-out within-batch sample. These values quantify modality-dominance dynamics during baseline training and define the high-imbalance ($\delta > 0.15$) and low-imbalance ($\delta \leq 0.15$) categorization used in Section~\ref{sec:imbalance_cat}. The high-imbalance group is heterogeneous in source: CREMA-D imbalance is audio-dominance in audio-visual emotion recognition, whereas CMU-MOSI and CMU-MOSEI imbalance reflects text-sufficiency, where text-only baselines are reported within roughly $1$~pp of multimodal accuracy~\citep{li2023agm,wei2025dgl}. BraTS~2021 (4 MRI sequences, binary tumor-presence probes per sequence) is reported separately as a dense-prediction benchmark.
+
+\begin{table}[H]
+\centering
+\caption{Per-dataset utilization gap $\delta$ at the end of baseline training (mean $\pm$ std over 5 seeds), measured as the EMA-smoothed probe accuracy gap (Eq.~\eqref{eq:utilization_gap}).}
+\label{tab:delta_per_dataset}
+\vspace{0.3em}
+\begin{tabular}{lc}
+\toprule
+\textbf{Dataset} & $\boldsymbol{\delta}$ \textbf{(mean $\pm$ std)} \\
+\midrule
+CREMA-D       & $0.268 \pm 0.029$ \\
+CMU-MOSI      & $0.222 \pm 0.047$ \\
+CMU-MOSEI     & $0.178 \pm 0.086$ \\
+Twitter15     & $0.150 \pm 0.096$ \\
+Sarcasm       & $0.076 \pm 0.008$ \\
+Kinetics-Sounds & $0.038 \pm 0.013$ \\
+AVE           & $0.017 \pm 0.009$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 \subsection{Cross-class comparison with MSLR}
 \label{app:mslr}
 
 We additionally compare PGGB to MSLR~\citep{yao2022mslr}, a per-modality learning-rate (PMLR) baseline. As discussed in Section~\ref{sec:related}, MSLR operates on the optimizer step rather than the gradient and forms an adjacent intervention class that is not directly composable with gradient-modulation methods. Because MSLR's canonical Keep-variant requires per-modality unimodal pre-calibration that lies outside our matched-pipeline budget, we run a fixed-ratio Keep variant: audio:1.0/visual:2.0 on CREMA-D (selected from a 3-config sweep over audio:0.25/0.5/1.0 with matching visual scaling), audio:0.5/visual:1.0 on AVE and Kinetics-Sounds, and text:0.5 with other modalities at 1.0 on CMU-MOSI, CMU-MOSEI, Twitter15, and Sarcasm. Five seeds per dataset on the matched ResNet-18 / two-layer MLP pipeline.
 
-Table~\ref{tab:mslr_comparison} reports the comparison. PGGB+OGM-GE exceeds MSLR by $+7.66$~pp on the high-imbalance CREMA-D benchmark, supporting the composability story. PGGB alone matches or exceeds MSLR on five of six low-imbalance comparisons (AVE, KS, MOSI, MOSEI, Sarcasm) and is within seed variance on Twitter15 ($-0.40$~pp, sub-$\sigma$). MSLR's heuristic throttle-audio ratio underperforms baseline on AVE ($-1.82$~pp), illustrating the sensitivity of fixed-ratio MSLR to per-dataset modality-dominance patterns that PGGB's probe-driven adaptation sidesteps.
+Table~\ref{tab:mslr_comparison} reports the comparison. PGGB+OGM-GE exceeds MSLR by $+7.66$~pp on the high-imbalance CREMA-D benchmark and exceeds MSLR on the high-imbalance text-dominant sentiment benchmarks (MOSI $+0.76$~pp, MOSEI $+1.44$~pp), supporting the composability story. PGGB alone matches or exceeds MSLR on three of four low-imbalance comparisons (AVE, KS, Sarcasm) and is within seed variance on Twitter15 ($-0.40$~pp, sub-$\sigma$). MSLR's heuristic throttle-audio ratio underperforms baseline on AVE ($-1.82$~pp), illustrating the sensitivity of fixed-ratio MSLR to per-dataset modality-dominance patterns that PGGB's probe-driven adaptation sidesteps.
 
 \begin{table}[H]
 \centering
