@@ -33,7 +33,7 @@ Thank you all for the careful reading. The reviews converge on a positive view o
 
 **[AC point 4, R-tQk1] Early probe trajectories and warm-up.**
 
-**Response.** From per-event instrumentation of all 500 probe evaluations ($K=20$) on CREMA-D: at the first probe event (iteration 19) both probes are at chance level and the smoothed ordering is briefly inverted by 0.7 pp. From the second event (iteration 39) the dominant modality is identified correctly and the ordering never inverts again until late training, when the utilization gap has been closed by design. Worst-case misdirection exposure is a single $K$-step window with smoothed scale at most $1+\mu\alpha$ (approximately 1.23). No explicit warm-up is needed: scales initialize at 1 and the EMA ramp acts as an implicit warm-up. We will add the early-window figure to the appendix.
+**Response.** From per-event instrumentation of all 500 probe evaluations ($K=20$) on CREMA-D: at the first probe event (iteration 19) both probes are at chance level and the smoothed ordering is briefly inverted by 0.7 pp. From the second event (iteration 39) the dominant modality is identified correctly (+1.2 pp, growing to +12.8 pp by the end of epoch 3) and the ordering inverts only twice more in the entire run, exactly where the smoothed gap passes through zero and self-attenuation holds the scales near 1. A per-event table is in the response to tQk1. Worst-case misdirection exposure is a single $K$-step window with smoothed scale at most $1+\mu\alpha$ (approximately 1.23). No explicit warm-up is needed: scales initialize at 1 and the EMA ramp acts as an implicit warm-up. We will add the early-window figure to the appendix.
 
 **[R-tQk1] Wall-clock time and memory.**
 
@@ -46,3 +46,15 @@ Thank you all for the careful reading. The reviews converge on a positive view o
 **[AC point 6] Revise the theoretical claims so they match what the propositions establish.**
 
 **Response.** We agree the propositions are safety properties, not gap-closure or rate results, and Section 3.5 already labels them as such. We will align the abstract and introduction wording with this framing in the camera-ready ("we establish three safety properties" rather than any suggestion of a convergence-improvement claim). Details in the responses to tQk1 and gN93.
+
+**Summary of camera-ready revisions**
+
+So the committed changes are auditable in one place, the camera-ready will include:
+
+1. **Table 1 (CREMA-D headline):** replaced by the $n=10$ statistics ($71.30 \pm 1.48$, +2.06 pp, 95% CI [0.73, 3.38]), with per-seed values in the appendix, and explicit row labeling so the baseline row cannot be mistaken for a published OGM-GE number (miLe Q7).
+2. **Section 4.1:** measured wall-clock overhead (+1.6%) replaces the ~1% estimate, and the dataset-level $\delta$ definition moves into the main text with the threshold-sensitivity discussion (gN93 Q2, AC point 5).
+3. **Sections 3.3 and 5:** explicit statement of the optimizer dependence of gradient scaling, with the Adam update-norm measurement added to the appendix and optimizer-state-aware actuation listed as future work (miLe W3, AC point 2).
+4. **Abstract and introduction:** theory characterized as three safety properties, with the rate-level analysis stated as open (tQk1 W3, miLe Q6, AC point 6).
+5. **Appendix (probe diagnostics):** early-window trajectory figure and warm-up discussion from the per-event instrumentation (tQk1 W2, AC point 4).
+6. **Limitations:** expanded to cover safety-guarantee scoping at high imbalance, threshold sensitivity with the Twitter15 boundary case, and the undertrained-versus-intrinsically-less-informative distinction (gN93).
+7. **Clarity fixes** (miLe Q1-Q6): definition of the fusion classifier $g$ after Eq. 1, rewritten closing paragraph of Section 3.1, replacement of the unclear L147 sentence, one sentence on $s_m$ at exact balance, and enumeration of the 2-4 modality configurations in Section 4.1.

@@ -10,6 +10,10 @@ Thank you for a technically sharp review. Your W3 pushed us to run a measurement
 2. **Our main table uses 3 frames at 3 fps**, following the protocol of more recent baselines (MILES, InfoReg), as stated in Section 4.1. Richer visual input raises all methods, and OGM-GE benefits most (+6.7 pp over its 1-frame result), because gradient modulation is more effective when the weak modality carries more information. Follow-up works under richer sampling report OGM-GE at 72-75%, and our 69.14 sits between the two published operating points, as disclosed in the Reproduction protocol paragraph.
 3. **The direction of the difference works against us, not for us.** Our reproduced OGM-GE baseline is 7.2 pp stronger than the original paper's number, which makes the +2.31 pp margin of our composition harder to achieve, not easier.
 
+To prevent this misreading for future readers, the revised Table 1 note is presented as follows.
+
+*Baseline denotes joint training with unmodified gradients (not a published OGM-GE result). All methods are re-run under the matched 3-frame protocol of Section 4.1. OGM-GE's original 1-frame result (61.9) is reproduced at $62.47 \pm 1.42$ in Table 2.*
+
 **[W1] This paper would be better served by contribution type "General" instead of "Concept and Feasibility", as the scope of the proposed method is small enough to be validated in a single paper.**
 
 **Response.** We defer to the AC's judgment on the appropriate designation.
