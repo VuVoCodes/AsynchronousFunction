@@ -28,8 +28,10 @@ Thank you very much for the positive assessment and for recognizing the repurpos
 
 **[W3] Given that the paper claims theoretical contributions in the abstract and introduction, could the authors clarify how the propositions help prove whether PGGB actually closes the modality gap or improves convergence speed? Or the abstract and introduction could be reworded to more precisely characterize the theoretical results.**
 
-**Response.** We agree with the reviewer's reading and will reword accordingly.
+**Response.** We agree with your reading and will reword accordingly.
 
 1. The three propositions are **safety properties**: the intervention is bounded (Prop. 1), it vanishes when modalities are balanced so it cannot destabilize already-balanced training (Prop. 2), and training under the intervention retains the standard nonconvex SGD descent guarantee with a quantified worst-case variance inflation of $s_{\max}^2$ (Prop. 3).
 2. They do not establish that PGGB closes the modality gap or improves convergence speed. Gap closure is supported empirically (Section 4.4: the weak-modality probe rises +9.41 pp while the strong falls only 0.81 pp, and the post-hoc utilization gap shrinks $5.4\times$ versus baseline).
-3. We will reword the abstract and introduction in the camera-ready to characterize the results precisely as safety guarantees, for example: "we establish three safety properties (bounded scaling, self-attenuation, and a standard-SGD descent bound with quantified variance inflation) a rate-level analysis linking gap closure to probe dynamics remains open." We believe honest scoping here strengthens rather than weakens the contribution, and we thank the reviewer for pushing on it.
+3. We will reword the abstract and introduction in the camera-ready to characterize the results precisely as safety guarantees, for example: "we establish three safety properties (bounded scaling, self-attenuation, and a standard-SGD descent bound with quantified variance inflation) a rate-level analysis linking gap closure to probe dynamics remains open." We believe honest scoping here strengthens rather than weakens the contribution, and we thank you for pushing on it.
+
+Thank you again for a review focused on exactly the feasibility questions this contribution needed answered.
