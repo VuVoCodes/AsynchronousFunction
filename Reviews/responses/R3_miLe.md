@@ -10,6 +10,17 @@ Thank you for a technically sharp review. Your W3 pushed us to run a measurement
 2. **Our main table uses 3 frames at 3 fps**, following the protocol of more recent baselines (MILES, InfoReg), as stated in Section 4.1. Richer visual input raises all methods, and OGM-GE benefits most (+6.7 pp over its 1-frame result), because gradient modulation is more effective when the weak modality carries more information. Follow-up works under richer sampling report OGM-GE at 72-75%, and our 69.14 sits between the two published operating points, as disclosed in the Reproduction protocol paragraph.
 3. **The direction of the difference works against us, not for us.** Our reproduced OGM-GE baseline is 7.2 pp stronger than the original paper's number, which makes the +2.31 pp margin of our composition harder to achieve, not easier.
 
+**[W1] This paper would be better served by contribution type "General" instead of "Concept and Feasibility", as the scope of the proposed method is small enough to be validated in a single paper.**
+
+**Response.** We defer to the AC's judgment on the appropriate designation.
+
+**[W2] The main results table shows improvements of < 0.5 pp over the best baseline on 7 out of 8 datasets, which is extremely minor.**
+
+**Response.** You are right that seven of the eight per-dataset margins are small. We respectfully suggest, though, that the best-versus-best framing understates what the table shows, for two reasons:
+
+1. **On the one benchmark with severe imbalance and full gradient flow, the margin is large and now firmly established.** With $n=10$ seeds per arm (5 new seeds added during rebuttal), PGGB+OGM-GE exceeds the strongest baseline by **+2.06 pp, 95% CI [0.73, 3.38], Welch $p=0.0044$** (Mann-Whitney $p=0.0029$, Cohen's $d=1.46$, 8 of 10 seed-matched pairs positive). For full transparency, the five fresh seeds alone give +1.80 pp in the same direction (4 of 5 pairs positive, one tie), which at $n=5$ does not reach significance on its own (CI [-0.42, 4.02]); the pooled $n=10$ estimate is the appropriate test and it is decisive.
+2. **Near-neutrality elsewhere is the designed behavior, and the relevant contrast is that prior methods regress there.** By self-attenuation (Prop. 2), PGGB withdraws when the utilization gap is small. On the four low-imbalance benchmarks PGGB is the best-performing method on all four, while OGM-GE regresses on three of them (KS -1.80 pp, Twitter15 -0.27, Sarcasm -0.59). A method that gains where imbalance exists and provably does not intervene where it does not is the intended contribution, and we will make this framing sharper in Section 4.2.
+
 **[W3] The proposed method of scaling the gradients should not be expected to give significant gains for the Adam optimizer, which is scale-invariant / unit-less. 4 out of 8 datasets use Adam and as expected show barely any improvement. OGM-GE has plausible improvement even with Adam because the GE component goes beyond mere gradient scaling.**
 
 **Response.** You are right about the mechanism, and we measured it. New per-step instrumentation records the applied scale, post-scaling gradient norm, and the norm of the actual parameter update per encoder ($\alpha=0.75$ versus $\alpha=0$, matched seeds):
@@ -25,13 +36,6 @@ Thank you for a technically sharp review. Your W3 pushed us to run a measurement
 4. We note that OGM-GE's Adam results similarly rely on its GE noise term rather than pure scaling, as you observe.
 5. We will state the optimizer dependence explicitly in Sections 3.3 and 5, add the measurement table to the appendix, and list optimizer-state-aware actuation (for example, scaling the update rather than the gradient) as future work.
 
-**[W2] The main results table shows improvements of < 0.5 pp over the best baseline on 7 out of 8 datasets, which is extremely minor.**
-
-**Response.** You are right that seven of the eight per-dataset margins are small. We respectfully suggest, though, that the best-versus-best framing understates what the table shows, for two reasons:
-
-1. **On the one benchmark with severe imbalance and full gradient flow, the margin is large and now firmly established.** With $n=10$ seeds per arm (5 new seeds added during rebuttal), PGGB+OGM-GE exceeds the strongest baseline by **+2.06 pp, 95% CI [0.73, 3.38], Welch $p=0.0044$** (Mann-Whitney $p=0.0029$, Cohen's $d=1.46$, 8 of 10 seed-matched pairs positive). For full transparency, the five fresh seeds alone give +1.80 pp in the same direction (4 of 5 pairs positive, one tie), which at $n=5$ does not reach significance on its own (CI [-0.42, 4.02]), the pooled $n=10$ estimate is the appropriate test and it is decisive.
-2. **Near-neutrality elsewhere is the designed behavior, and the relevant contrast is that prior methods regress there.** By self-attenuation (Prop. 2), PGGB withdraws when the utilization gap is small. On the four low-imbalance benchmarks PGGB is the best-performing method on all four, while OGM-GE regresses on three of them (KS -1.80 pp, Twitter15 -0.27, Sarcasm -0.59). A method that gains where imbalance exists and provably does not intervene where it does not is the intended contribution, and we will make this framing sharper in Section 4.2.
-
 **[W4] The ablation table (Table 2) shows that OGM-GE alone recovers most of the gap between PGGB+OGM-GE and the baseline (2.17 pp) and PGGB's contribution is minor (0.22 pp), well within the per-seed standard deviation.**
 
 **Response.**
@@ -39,10 +43,6 @@ Thank you for a technically sharp review. Your W3 pushed us to run a measurement
 1. The 0.22 pp figure comes from the 1-frame ablation (Table 2), where the visual modality is deliberately information-starved. Boosting amplifies the gradient signal of the weak encoder, and it cannot create information the input does not carry: with a single frame there is little for the boosted encoder to learn, which the ablation shows.
 2. Under the main 3-frame protocol the same decomposition gives +2.31 pp (now +2.06 pp at $n=10$ with CI excluding zero, see W2), a $10\times$ larger increment attributable to boost actuation alone: the $\alpha=0$ arm holds the entire probe pipeline active and differs only in the multiplicative scale.
 3. We will make the information-availability reading of the 1-frame ablation explicit.
-
-**[W1] This paper would be better served by contribution type "General" instead of "Concept and Feasibility", as the scope of the proposed method is small enough to be validated in a single paper.**
-
-**Response.** We defer to the AC's judgment on the appropriate designation.
 
 **[Q1-Q6] Clarity questions.**
 
