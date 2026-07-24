@@ -37,4 +37,4 @@ We agree the propositions are safety properties, not gap-closure or rate results
 
 ## Imbalance categorization (AC point 5, R-gN93)
 
-The dataset-level delta is the final-epoch EMA-smoothed probe-accuracy gap during baseline training, averaged over 5 seeds (Appendix B.9). We will move the definition into Section 4.1 and add the threshold-sensitivity discussion (any threshold in (0.150, 0.178] yields the identical split; Twitter15 is the boundary case). Details in the response to gN93.
+The dataset-level delta is the final-epoch EMA-smoothed probe-accuracy gap during baseline training, averaged over 5 seeds (Appendix B.9). We will move the definition into Section 4.1 and add the threshold-sensitivity discussion (any threshold in (0.150, 0.222] yields the identical split; Twitter15 is the boundary case). Details in the response to gN93.
