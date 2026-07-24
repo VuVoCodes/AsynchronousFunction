@@ -33,7 +33,9 @@ Usage:
 """
 
 import argparse
+import json
 import math
+import os
 import sys
 import yaml
 import random
@@ -2137,6 +2139,30 @@ def train_epoch(
                                 else:
                                     param.grad.data.mul_(soft_scale)
 
+        # ========== Update-Norm Instrumentation (rebuttal E3) ==========
+        # Active only when PGGB_UPDATE_NORMS_FILE is set. Records, per step,
+        # the applied boost scales, post-scaling encoder gradient norms, and
+        # the effective parameter update norm per modality encoder.
+        _norms_file = os.environ.get("PGGB_UPDATE_NORMS_FILE")
+        if _norms_file and scheduler.mode == "continuous":
+            with torch.no_grad():
+                _pre_params = {
+                    m: torch.cat([
+                        p.detach().flatten()
+                        for n, p in model.named_parameters()
+                        if f"encoders.{m}" in n
+                    ]).clone()
+                    for m in modalities
+                }
+                _grad_norm_scaled = {
+                    m: torch.cat([
+                        p.grad.detach().flatten()
+                        for n, p in model.named_parameters()
+                        if f"encoders.{m}" in n and p.grad is not None
+                    ]).norm().item()
+                    for m in modalities
+                }
+
         # ========== Optimizer Step ==========
         # NOTE: Fusion head always updates regardless of modality schedules
         if use_amp and scaler is not None:
@@ -2146,6 +2172,25 @@ def train_epoch(
             scaler.update()
         else:
             optimizer.step()
+
+        if _norms_file and scheduler.mode == "continuous":
+            with torch.no_grad():
+                _update_norm = {
+                    m: (torch.cat([
+                        p.detach().flatten()
+                        for n, p in model.named_parameters()
+                        if f"encoders.{m}" in n
+                    ]) - _pre_params[m]).norm().item()
+                    for m in modalities
+                }
+            _rec = {
+                "step": int(global_step),
+                "scales": {m: float(scheduler.current_continuous_scales[m]) for m in modalities},
+                "grad_norm_scaled": _grad_norm_scaled,
+                "update_norm": _update_norm,
+            }
+            with open(_norms_file, "a") as _f:
+                _f.write(json.dumps(_rec) + "\n")
 
         # ========== Update Scheduler ==========
         scheduler.dynamics.update(

@@ -6,3 +6,4 @@
 - [Framing trajectory decision](project_framing_trajectory.md) — 2026-04-23 boost-first vs monitoring-first vs hybrid; recommended hybrid with three-way ablation
 - [Figure 1 evaluation history](project_figure1_evaluation.md) — 2026-04-27 finalized: external standalone TikZ, K-step EMA annotation, conditional approve with 2 minor polish items
 - [2026-05-02 Appendix audit](review_20260502_appendix_audit.md) — App. A/B.1-B.8 reviewer-style flags: B.5 single-seed BLOCK, B.1 no URLs BLOCK, App. A measurability order
+
