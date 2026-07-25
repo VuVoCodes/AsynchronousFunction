@@ -22,7 +22,7 @@ The revised Table 1 note is presented as follows.
 **Response.** You are right that seven of the eight per-dataset margins are small. We suggest, though, that best-versus-best framing understates the table, for two reasons:
 
 1. **On the one benchmark with severe imbalance and trainable encoders, the margin is established at $n=15$.** During this discussion period we extended the comparison to $n=15$ per arm, fixing the final five seeds in advance under a stopping rule (all 15 reported, no further additions). PGGB+OGM-GE gives $71.00 \pm 1.46$ versus $69.40 \pm 1.25$ for the $\alpha=0$ arm: **+1.60 pp, 95% Welch CI [0.59, 2.62], Welch $p=0.0032$**, Mann-Whitney $p=0.0054$, Cohen's $d=1.18$. We state the trajectory plainly: +2.31 (original 5), +2.06 ($n=10$), +1.60 ($n=15$): the original seeds were favorable draws and the stabilized effect is smaller than first reported. The two later 5-seed batches do not reach significance individually, which is why we report the pooled estimate, whose CI excludes zero, and all runs are reported with no further additions. We will adopt the $n=15$ statistics as the headline throughout the camera-ready, updating both CREMA-D arms together, with all 30 per-seed values in the appendix.
-2. **Near-neutrality elsewhere is the designed behavior, and the relevant contrast is that prior methods regress there.** On the four low-imbalance benchmarks standalone PGGB is best on all four, while OGM-GE regresses on three (KS -1.80 pp, Twitter15 -0.27, Sarcasm -0.59).
+2. **Near-neutrality elsewhere is what the method is built to produce, and the relevant contrast is that prior methods regress there.** On the four low-imbalance benchmarks standalone PGGB is best on all four, while OGM-GE regresses on three (KS -1.80 pp, Twitter15 -0.27, Sarcasm -0.59).
 
 In summary:
 
@@ -52,19 +52,19 @@ In summary:
 
 **Response.**
 
-1. The 0.22 pp figure comes from the 1-frame ablation (Table 2), where the visual modality is deliberately information-starved. Boosting amplifies the weak encoder's gradient signal but cannot create information the input does not carry: with a single frame there is little to learn. This complements rather than contradicts Section 4.3's "amplifies method differences" rationale: throttling acts on the information-rich dominant modality and is amplified at 1-frame, while boosting needs weak-modality input and is starved.
+1. You are right that Table 2 as presented makes PGGB's contribution look marginal. The 0.22 pp figure comes from the 1-frame ablation, where the visual modality is information-starved: boosting amplifies the weak encoder's gradient signal but cannot create information the input does not carry, so with a single frame there is little to learn. Throttling, which acts on the information-rich dominant modality, is amplified at 1-frame, while boosting is starved there.
 2. Under the main 3-frame protocol the same decomposition gives +1.60 pp at $n=15$ (CI excluding zero, see W2), versus 0.22 pp (within noise) at 1-frame, isolating boost actuation within the OGM-GE composition: the $\alpha=0$ arm holds the entire probe pipeline active and differs only in the multiplicative scale. We do not claim this increment generalizes across throttlers (App. B.7 marks non-OGM-GE compositions within noise).
 3. We agree the isolating decomposition should live at the main operating point: in the camera-ready we will promote the 3-frame decomposition (with the $n=15$ statistics) to the primary ablation table and retain the 1-frame variant as the information-availability ablation, with its reading made explicit.
 
 **[Q1-Q6] Clarity questions.**
 
-**Response.**
+**Response.** Thank you for these — they identify real gaps in our exposition, and we will fix all six.
 
 1. **Q1 (L17):** 2 = audio+visual (CREMA-D, AVE, KS) and text+image (Twitter15, Sarcasm), 3 = text+audio+vision (CMU-MOSI and CMU-MOSEI), 4 = four MRI sequences (BraTS 2021). We will enumerate this in Section 4.1.
 2. **Q2 (L131, $g$ undefined):** correct, the fusion classifier $g$ is used before being formally defined. We will add the definition after Eq. 1.
 3. **Q3 (last paragraph of 3.1):** we will rewrite it as: "Each encoder's fusion-loss gradient passes through the fusion head's per-modality weighting $\partial \hat{y} / \partial z_m$, which a dominant modality shapes. Imbalance signals computed from $L$ therefore measure the weak modality through a channel the strong modality controls."
 4. **Q4 (L147-148):** the sentence is indeed unclear and we will replace it with: "$P_m$ therefore reflects the representation quality of $z_m$ alone, independent of how the fusion head weights modality $m$."
-5. **Q5 (L172, $s_m$ at balance):** we are glad to clarify this subtle case. $s_m$ is well-defined at exact balance: when all $\bar{P}$ are equal, the numerator of Eq. 7 is zero for every $m$ while the denominator equals $\epsilon > 0$, so $w_m = 0$ and $s_m = 1$ exactly (no intervention). We will add one sentence stating this.
+5. **Q5 (L172, $s_m$ at balance):** our text did not state the $\epsilon$-guarded case, so this could not be inferred from the paper as written. $s_m$ is in fact well-defined at exact balance: when all $\bar{P}$ are equal, the numerator of Eq. 7 is zero for every $m$ while the denominator equals $\epsilon > 0$, so $w_m = 0$ and $s_m = 1$ exactly (no intervention). We will add one sentence stating this.
 6. **Q6 (takeaways of Section 3.5):** the propositions are safety properties: bounded intervention (Prop. 1), a provably small intervention near exact balance (Prop. 2), and the standard nonconvex SGD descent guarantee with variance inflated by at most $s_{\max}^2 = 4$ (Prop. 3, stated for SGD). They intentionally claim neither faster convergence nor guaranteed gap closure, and the abstract and introduction will be reworded.
 
 Your review directly produced the Adam measurement and the seed extension. We would welcome any further questions and are glad to run additional analysis in this window.
