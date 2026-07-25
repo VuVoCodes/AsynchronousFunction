@@ -41,7 +41,7 @@ Thank you all for the careful reading. The reviews converge on a positive view o
 
 **[AC point 5] Clarify the dataset-level imbalance score and the choice of the 0.15 threshold.**
 
-**Response.** The dataset-level $\delta$ is the final-epoch EMA-smoothed probe-accuracy gap during baseline training, averaged over 5 seeds (Appendix B.9). We will move the definition into Section 4.1 and add the threshold-sensitivity discussion (every threshold in $[0.150, 0.222)$ yields the identical categorization under the paper's rule that $\delta$ exceed the threshold, Twitter15 is the boundary case, and the CMU-MOSEI value is under re-measurement on re-verified data). Details in the response to gN93.
+**Response.** The dataset-level $\delta$ is the final-epoch EMA-smoothed probe-accuracy gap during baseline training, averaged over 5 seeds (Appendix B.9). We will move the definition into Section 4.1 and add the threshold-sensitivity discussion (every threshold in $[0.150, 0.178)$ yields the identical categorization under the paper's rule that $\delta$ exceed the threshold, Twitter15 is the boundary case, and the CMU-MOSEI value is under re-measurement on re-verified data). Details in the response to gN93.
 
 **[AC point 6] Revise the theoretical claims so they match what the propositions establish.**
 
