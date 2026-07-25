@@ -7,7 +7,7 @@ Thank you for a technically sharp review. Your W3 pushed us to run a measurement
 **Response.** The OGM-GE paper (Peng et al., CVPR 2022) reports **61.9%** on CREMA-D (their Tables 1 and 2, concatenation fusion). The 61.59 figure is the joint-training baseline row of our own Table 1, and we apologize that the adjacency of these rows invites this reading. Their protocol uses **one visual frame** per clip (their Section 4.2). Two facts resolve the comparison:
 
 1. **We reproduce their number at their operating point.** Our 1-frame ablation (Table 2) yields OGM-GE at $62.47 \pm 1.42$, consistent with their published 61.9.
-2. **Our main table uses 3 frames at 3 fps**, a single matched pipeline shared by every Table 1 method, so all methods are compared under identical inputs. Richer visual input raises every method (OGM-GE by +6.7 pp over its 1-frame result). We will correct Section 4.1's protocol attribution ("following OGM-GE").
+2. **Our main table uses 3 frames at 3 fps**, a single matched pipeline shared by every Table 1 method. Richer visual input raises every method (OGM-GE by +6.7 pp over its 1-frame result). We will correct Section 4.1's protocol attribution ("following OGM-GE").
 
 The revised Table 1 note is presented as follows.
 
@@ -15,13 +15,13 @@ The revised Table 1 note is presented as follows.
 
 **[W1] This paper would be better served by contribution type "General" instead of "Concept and Feasibility", as the scope of the proposed method is small enough to be validated in a single paper.**
 
-**Response.** We appreciate the perspective. We selected "Concept and Feasibility" because probe-guided control opens scope beyond what this paper validates, but we are comfortable being assessed under the "General" criteria and defer to the AC's judgment on the designation.
+**Response.** We appreciate the perspective. We selected "Concept and Feasibility" because probe-guided control opens scope beyond what this paper validates, but we are comfortable being assessed under the "General" criteria and defer to the AC's judgment.
 
 **[W2] The main results table shows improvements of < 0.5 pp over the best baseline on 7 out of 8 datasets, which is extremely minor.**
 
 **Response.** Seven of the eight per-dataset margins are indeed small, as you note. We suggest, though, that Table 1's presentation invites a best-versus-best reading that understates the result, for two reasons:
 
-1. **On the one benchmark with severe imbalance and trainable encoders, the margin is established at $n=15$.** During this discussion period we extended the comparison to $n=15$ per arm, fixing the final five seeds in advance under a stopping rule (all 15 reported, no further additions). PGGB+OGM-GE gives $71.00 \pm 1.46$ versus $69.40 \pm 1.25$ for the $\alpha=0$ arm: **+1.60 pp, 95% Welch CI [0.59, 2.62], Welch $p=0.0032$**, Mann-Whitney $p=0.0054$, Cohen's $d=1.18$. We state the trajectory plainly: +2.31 (original 5), +2.06 ($n=10$), +1.60 ($n=15$): the original seeds were favorable draws and the pooled estimate is smaller than first reported. The two later 5-seed batches do not reach significance individually, which is why we report the pooled estimate, whose CI excludes zero, and all runs are reported with no further additions. We will adopt the $n=15$ statistics as the headline throughout the camera-ready, updating both CREMA-D arms together, with all 30 per-seed values in the appendix.
+1. **On the one benchmark with severe imbalance and trainable encoders, the margin is established at $n=15$.** During this discussion period we extended the comparison to $n=15$ per arm, fixing the final five seeds in advance under a stopping rule (all 15 reported, no further additions). PGGB+OGM-GE gives $71.00 \pm 1.46$ versus $69.40 \pm 1.25$ for the $\alpha=0$ arm: **+1.60 pp, 95% Welch CI [0.59, 2.62], Welch $p=0.0032$**, Mann-Whitney $p=0.0054$, Cohen's $d=1.18$. The composition also exceeds standalone OGM-GE (69.14, Table 1) by +1.86 pp. We state the trajectory plainly: +2.31 (original 5), +2.06 ($n=10$), +1.60 ($n=15$): the original seeds were favorable draws and the pooled estimate is smaller than first reported. The two later 5-seed batches do not reach significance individually, which is why we report the pooled estimate, whose CI excludes zero. We will adopt the $n=15$ statistics as the headline throughout the camera-ready, updating both CREMA-D arms together, with all 30 per-seed values in the appendix.
 2. **Near-neutrality elsewhere is what the method is built to produce, and the relevant contrast is that prior methods regress there.** On the four low-imbalance benchmarks standalone PGGB is best on all four, while OGM-GE regresses on three (KS -1.80 pp, Twitter15 -0.27, Sarcasm -0.59).
 
 In summary:
@@ -31,6 +31,7 @@ In summary:
 | Severe imbalance, trainable encoders (CREMA-D) | +1.60 pp over the $\alpha=0$ arm at $n=15$ (final batch pre-registered), CI [0.59, 2.62], $p=0.0032$ |
 | Low imbalance (AVE, KS, Twitter15, Sarcasm) | PGGB best method on all four (margins within seed noise); OGM-GE regresses on three |
 | High imbalance under Adam (sentiment) | PGGB's marginal effect within seed std; actuation attenuated (measured, W3) |
+| Dense prediction (BraTS 2021) | Reported separately as segmentation (Section 4.1); margin small, as you note |
 
 **[W3] The proposed method of scaling the gradients should not be expected to give significant gains for the Adam optimizer, which is scale-invariant / unit-less. 4 out of 8 datasets use Adam and as expected show barely any improvement. OGM-GE has plausible improvement even with Adam because the GE component goes beyond mere gradient scaling.**
 
