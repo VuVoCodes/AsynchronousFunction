@@ -10,10 +10,10 @@ Thank you very much for the positive assessment and for recognizing the repurpos
 |---|---|---|---|
 | Baseline (joint training) | 17.43 | reference | ~12.2 GB |
 | PGGB (probes + boost) | 17.71 | **+1.6%** | ~12.2 GB |
-| PGGB+OGM-GE | 18.71 | +7.4% | ~12.2 GB |
+| PGGB+OGM-GE | 18.71 | +7.3% | ~12.2 GB |
 
-1. The probe-attributable overhead is +1.6%, consistent with the ~1% estimate in Section 4.1. The remaining ~5.8 pp in the composed row is OGM-GE's own per-modality contribution computation, incurred by OGM-GE with or without PGGB.
-2. Peak memory is unchanged across the three configurations (differences below 0.2 GB are within allocator noise): each probe is a single linear layer (~3K parameters, or ~0.03% of one ResNet-18 encoder), and the EMA state is a handful of scalars (one smoothed accuracy and one smoothed scale per modality).
+1. The probe-attributable overhead is +1.6%, slightly above the ~1% estimate in Section 4.1, which we will update to the measured figure. The remaining ~5.7 pp in the composed row is OGM-GE's own per-modality contribution computation, incurred by OGM-GE with or without PGGB.
+2. Peak memory is unchanged across the three configurations (12.1-12.3 GB): each probe is a single linear layer (~3K parameters, or ~0.03% of one ResNet-18 encoder), and the EMA state is a handful of scalars (one smoothed accuracy and one smoothed scale per modality).
 3. We will add this table to the appendix.
 
 **[W2] Could the authors provide early-training probe trajectory plots showing whether the utilization gap correctly identifies the dominant modality from the start, and if any early misdirection occurs? Or is there any warm-up period?**
@@ -30,19 +30,19 @@ Thank you very much for the positive assessment and for recognizing the repurpos
 | end of epoch 2 | 204 | 25.9 | 16.1 | +9.8 |
 | end of epoch 3 | 309 | 29.3 | 16.5 | +12.8 |
 
-1. At the **first** probe event (iteration 19), the raw batch accuracies are at chance level (9.4% audio, 15.6% visual, against 6-class chance 16.7%), the tabulated values are lower because the EMA ramps from a zero cold start. The smoothed ordering is inverted by 0.7 pp, which is noise around zero.
-2. From the **second** probe event (iteration 39) onward, the utilization gap correctly identifies audio as dominant (+1.2 pp, growing to +12.8 pp by the end of epoch 3) and **never inverts again** during the imbalanced phase.
-3. The only two later inversions (iterations 5434 and 5479 of 10,500) occur exactly where the smoothed gap passes through zero (-0.3 and -1.3 pp), where the ordering is uninformative by construction and self-attenuation holds the scales near 1 regardless.
-4. Misdirection exposure is therefore bounded by construction: scales initialize at 1, are refreshed only at probe events, and the EMA ($\mu=0.3$) limits the worst case to a single $K$-step window with scale at most $1+\mu\alpha$ (approximately 1.23 in our configuration). This per-window EMA bound is tighter than, and consistent with, Prop. 1's hard cap $s \le s_{\max} = 2$.
-5. No explicit warm-up period is used or needed: the EMA ramp is an implicit warm-up. A diagnostic comparing EMA cold-start initializations (zero versus first measurement) produced identical accuracy by epoch 3.
+1. At the **first** probe event (iteration 19), both probes are statistically at chance on the 32-sample evaluation half, and the smoothed ordering is inverted by 0.7 pp, which is noise around zero. (The tabulated values are small because the probe-accuracy EMA is still ramping from its zero initialization.)
+2. From the **second** probe event (iteration 39) onward, the utilization gap correctly identifies audio as dominant (+1.2 pp, growing to +12.8 pp by the end of epoch 3) and **never inverts again through epoch 51**.
+3. The only two later inversions (2 of the 500 probe events, both after epoch 50) occur exactly where the smoothed gap passes through zero (-0.3 and -1.3 pp), where the ordering is uninformative by construction. No inversion persisted beyond a single probe event in the instrumented run.
+4. Exposure to a single misdirected window is small by construction: scales initialize at 1 and are refreshed only at probe events, so a misdirected first window carries a smoothed scale of at most $1+\mu\alpha \approx 1.23$ ($\mu=0.3$, $\alpha=0.75$ in this composed run), against the global cap $\bar{s}_m \le s_{\max}=2$ of Prop. 1.
+5. No explicit warm-up period is used or needed: first-window exposure is capped as above, and a diagnostic comparing probe-EMA cold-start initializations (zero versus first measurement) produced indistinguishable final accuracy.
 
 **[W3] Given that the paper claims theoretical contributions in the abstract and introduction, could the authors clarify how the propositions help prove whether PGGB actually closes the modality gap or improves convergence speed? Or the abstract and introduction could be reworded to more precisely characterize the theoretical results.**
 
 **Response.** We agree with your reading and will reword accordingly.
 
-1. The three propositions are **safety properties**: the intervention is bounded (Prop. 1), it vanishes when modalities are balanced so it cannot destabilize already-balanced training (Prop. 2), and training under the intervention retains the standard nonconvex SGD descent guarantee with a quantified worst-case variance inflation of $s_{\max}^2$ (Prop. 3).
+1. The three propositions are **safety properties**: the intervention is bounded (Prop. 1), provably small near exact balance (Prop. 2), and training under the intervention retains the standard nonconvex SGD descent guarantee with a quantified worst-case variance inflation of $s_{\max}^2$ (Prop. 3).
 2. They do not establish that PGGB closes the modality gap or improves convergence speed. Gap closure is supported empirically (Section 4.4: the weak-modality probe rises +9.41 pp while the strong falls only 0.81 pp, and the post-hoc utilization gap shrinks $5.4\times$ versus baseline).
-3. We will reword the abstract and introduction in the camera-ready to characterize the results precisely as safety guarantees. The revised sentence is presented as follows.
+3. We will reword the abstract, the introduction, and the corresponding statements in Sections 3.3 and 4.2 in the camera-ready to characterize the results precisely as safety guarantees. The revised sentence is presented as follows.
 
 *We establish three safety properties: bounded scaling, self-attenuation, and a standard-SGD descent bound with quantified variance inflation. A rate-level analysis linking gap closure to probe dynamics remains open.*
 
