@@ -4,7 +4,7 @@ Thank you very much for the positive assessment and for recognizing the repurpos
 
 **[W1] Could the authors provide a detailed wall-clock time and memory consumption for PGGB against baseline training?**
 
-**Response.** Measured on one RTX 4090, CREMA-D 3-frame, mean seconds/epoch over 7 epochs, identical data pipeline:
+**Response.** Thank you for this practical question. Measured on one RTX 4090, CREMA-D 3-frame, mean seconds/epoch over 7 epochs, identical data pipeline:
 
 | Configuration | s/epoch | overhead | peak GPU memory |
 |---|---|---|---|
@@ -18,7 +18,7 @@ Thank you very much for the positive assessment and for recognizing the repurpos
 
 **[W2] Could the authors provide early-training probe trajectory plots showing whether the utilization gap correctly identifies the dominant modality from the start, and if any early misdirection occurs? Or is there any warm-up period?**
 
-**Response.** We instrumented all 500 probe evaluations of a full CREMA-D training run (every $K=20$ iterations within each 105-iteration epoch, so 5 events per epoch over 100 epochs) and examined the early window. Since plots cannot be attached in this format, we tabulate the EMA-smoothed probe accuracies $\bar{P}_m$ (%) at the early probe events, and will add the corresponding figure to the appendix:
+**Response.** Thank you for this suggestion. We instrumented all 500 probe evaluations of a full CREMA-D training run (every $K=20$ iterations within each 105-iteration epoch, so 5 events per epoch over 100 epochs) and examined the early window. Since plots cannot be attached in this format, we tabulate the EMA-smoothed probe accuracies $\bar{P}_m$ (%) at the early probe events, and will add the corresponding figure to the appendix:
 
 | Probe event | Iteration (epoch) | $\bar{P}_{\text{audio}}$ | $\bar{P}_{\text{visual}}$ | Gap (pp) |
 |---|---|---|---|---|

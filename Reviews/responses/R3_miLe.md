@@ -15,13 +15,13 @@ The revised Table 1 note is presented as follows.
 
 **[W1] This paper would be better served by contribution type "General" instead of "Concept and Feasibility", as the scope of the proposed method is small enough to be validated in a single paper.**
 
-**Response.** We appreciate the perspective and defer to the AC's judgment on the appropriate designation.
+**Response.** We appreciate the perspective. We selected "Concept and Feasibility" because probe-guided control opens scope beyond what this paper validates, but we are comfortable being assessed under the "General" criteria and defer to the AC's judgment on the designation.
 
 **[W2] The main results table shows improvements of < 0.5 pp over the best baseline on 7 out of 8 datasets, which is extremely minor.**
 
-**Response.** You are right that seven of the eight per-dataset margins are small. We suggest, though, that best-versus-best framing understates the table, for two reasons:
+**Response.** Seven of the eight per-dataset margins are indeed small, as you note. We suggest, though, that Table 1's presentation invites a best-versus-best reading that understates the result, for two reasons:
 
-1. **On the one benchmark with severe imbalance and trainable encoders, the margin is established at $n=15$.** During this discussion period we extended the comparison to $n=15$ per arm, fixing the final five seeds in advance under a stopping rule (all 15 reported, no further additions). PGGB+OGM-GE gives $71.00 \pm 1.46$ versus $69.40 \pm 1.25$ for the $\alpha=0$ arm: **+1.60 pp, 95% Welch CI [0.59, 2.62], Welch $p=0.0032$**, Mann-Whitney $p=0.0054$, Cohen's $d=1.18$. We state the trajectory plainly: +2.31 (original 5), +2.06 ($n=10$), +1.60 ($n=15$): the original seeds were favorable draws and the stabilized effect is smaller than first reported. The two later 5-seed batches do not reach significance individually, which is why we report the pooled estimate, whose CI excludes zero, and all runs are reported with no further additions. We will adopt the $n=15$ statistics as the headline throughout the camera-ready, updating both CREMA-D arms together, with all 30 per-seed values in the appendix.
+1. **On the one benchmark with severe imbalance and trainable encoders, the margin is established at $n=15$.** During this discussion period we extended the comparison to $n=15$ per arm, fixing the final five seeds in advance under a stopping rule (all 15 reported, no further additions). PGGB+OGM-GE gives $71.00 \pm 1.46$ versus $69.40 \pm 1.25$ for the $\alpha=0$ arm: **+1.60 pp, 95% Welch CI [0.59, 2.62], Welch $p=0.0032$**, Mann-Whitney $p=0.0054$, Cohen's $d=1.18$. We state the trajectory plainly: +2.31 (original 5), +2.06 ($n=10$), +1.60 ($n=15$): the original seeds were favorable draws and the pooled estimate is smaller than first reported. The two later 5-seed batches do not reach significance individually, which is why we report the pooled estimate, whose CI excludes zero, and all runs are reported with no further additions. We will adopt the $n=15$ statistics as the headline throughout the camera-ready, updating both CREMA-D arms together, with all 30 per-seed values in the appendix.
 2. **Near-neutrality elsewhere is what the method is built to produce, and the relevant contrast is that prior methods regress there.** On the four low-imbalance benchmarks standalone PGGB is best on all four, while OGM-GE regresses on three (KS -1.80 pp, Twitter15 -0.27, Sarcasm -0.59).
 
 In summary:
@@ -34,7 +34,7 @@ In summary:
 
 **[W3] The proposed method of scaling the gradients should not be expected to give significant gains for the Adam optimizer, which is scale-invariant / unit-less. 4 out of 8 datasets use Adam and as expected show barely any improvement. OGM-GE has plausible improvement even with Adam because the GE component goes beyond mere gradient scaling.**
 
-**Response.** You are right about the mechanism, and we measured it. New per-step instrumentation records the applied scale, post-scaling gradient norm, and the norm of the actual parameter update per encoder ($\alpha=0.75$ versus $\alpha=0$, matched seeds):
+**Response.** Thank you for this observation. You are right about the mechanism, and we measured it. New per-step instrumentation records the applied scale, post-scaling gradient norm, and the norm of the actual parameter update per encoder ($\alpha=0.75$ versus $\alpha=0$, matched seeds):
 
 | Pipeline (optimizer) | boost scale | grad-norm ratio | **update-norm ratio** |
 |---|---|---|---|
@@ -58,7 +58,7 @@ In summary:
 
 **[Q1-Q6] Clarity questions.**
 
-**Response.** Thank you for these — they identify real gaps in our exposition, and we will fix all six.
+**Response.** Thank you for helping us identify some gaps in our exposition. We will address all six.
 
 1. **Q1 (L17):** 2 = audio+visual (CREMA-D, AVE, KS) and text+image (Twitter15, Sarcasm), 3 = text+audio+vision (CMU-MOSI and CMU-MOSEI), 4 = four MRI sequences (BraTS 2021). We will enumerate this in Section 4.1.
 2. **Q2 (L131, $g$ undefined):** correct, the fusion classifier $g$ is used before being formally defined. We will add the definition after Eq. 1.
@@ -67,4 +67,4 @@ In summary:
 5. **Q5 (L172, $s_m$ at balance):** our text did not state the $\epsilon$-guarded case, so this could not be inferred from the paper as written. $s_m$ is in fact well-defined at exact balance: when all $\bar{P}$ are equal, the numerator of Eq. 7 is zero for every $m$ while the denominator equals $\epsilon > 0$, so $w_m = 0$ and $s_m = 1$ exactly (no intervention). We will add one sentence stating this.
 6. **Q6 (takeaways of Section 3.5):** the propositions are safety properties: bounded intervention (Prop. 1), a provably small intervention near exact balance (Prop. 2), and the standard nonconvex SGD descent guarantee with variance inflated by at most $s_{\max}^2 = 4$ (Prop. 3, stated for SGD). They intentionally claim neither faster convergence nor guaranteed gap closure, and the abstract and introduction will be reworded.
 
-Your review directly produced the Adam measurement and the seed extension. We would welcome any further questions and are glad to run additional analysis in this window.
+Thank you again for a review that directly produced the Adam measurement and the seed extension. We would welcome any further questions and are glad to run additional analysis in this window.
