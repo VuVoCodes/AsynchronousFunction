@@ -18,7 +18,7 @@ Thank you very much for the positive assessment and for recognizing the repurpos
 
 **[W2] Could the authors provide early-training probe trajectory plots showing whether the utilization gap correctly identifies the dominant modality from the start, and if any early misdirection occurs? Or is there any warm-up period?**
 
-**Response.** We instrumented all 500 probe evaluations (every $K=20$ iterations) of a full CREMA-D training run and examined the early window. Since plots cannot be attached in this format, we tabulate the EMA-smoothed probe accuracies $\bar{P}_m$ (%) at the early probe events, and will add the corresponding figure to the appendix:
+**Response.** We instrumented all 500 probe evaluations of a full CREMA-D training run (every $K=20$ iterations within each 105-iteration epoch, so 5 events per epoch over 100 epochs) and examined the early window. Since plots cannot be attached in this format, we tabulate the EMA-smoothed probe accuracies $\bar{P}_m$ (%) at the early probe events, and will add the corresponding figure to the appendix:
 
 | Probe event | Iteration (epoch) | $\bar{P}_{\text{audio}}$ | $\bar{P}_{\text{visual}}$ | Gap (pp) |
 |---|---|---|---|---|
@@ -45,7 +45,5 @@ Thank you very much for the positive assessment and for recognizing the repurpos
 3. We will reword the abstract and introduction in the camera-ready to characterize the results precisely as safety guarantees. The revised sentence is presented as follows.
 
 *We establish three safety properties: bounded scaling, self-attenuation, and a standard-SGD descent bound with quantified variance inflation. A rate-level analysis linking gap closure to probe dynamics remains open.*
-
-We believe honest scoping here strengthens rather than weakens the contribution, and we thank you for pushing on it.
 
 Thank you again for a review focused on exactly the feasibility questions this contribution needed answered.
