@@ -30,10 +30,10 @@ Thank you very much for the positive assessment and for recognizing the repurpos
 | end of epoch 2 | 204 | 25.9 | 16.1 | +9.8 |
 | end of epoch 3 | 309 | 29.3 | 16.5 | +12.8 |
 
-1. At the **first** probe event (iteration 19), both probes are at chance level (6-class chance = 16.7%) and the EMA-smoothed ordering is inverted by 0.7 pp, which is noise around zero.
+1. At the **first** probe event (iteration 19), the raw batch accuracies are at chance level (9.4% audio, 15.6% visual, against 6-class chance 16.7%), the tabulated values are lower because the EMA ramps from a zero cold start. The smoothed ordering is inverted by 0.7 pp, which is noise around zero.
 2. From the **second** probe event (iteration 39) onward, the utilization gap correctly identifies audio as dominant (+1.2 pp, growing to +12.8 pp by the end of epoch 3) and **never inverts again** during the imbalanced phase.
 3. The only two later inversions (iterations 5434 and 5479 of 10,500) occur exactly where the smoothed gap passes through zero (-0.3 and -1.3 pp), where the ordering is uninformative by construction and self-attenuation holds the scales near 1 regardless.
-4. Misdirection exposure is therefore bounded by construction: scales initialize at 1, are refreshed only at probe events, and the EMA ($\mu=0.3$) limits the worst case to a single $K$-step window with scale at most $1+\mu\alpha$ (approximately 1.23 in our configuration).
+4. Misdirection exposure is therefore bounded by construction: scales initialize at 1, are refreshed only at probe events, and the EMA ($\mu=0.3$) limits the worst case to a single $K$-step window with scale at most $1+\mu\alpha$ (approximately 1.23 in our configuration). This per-window EMA bound is tighter than, and consistent with, Prop. 1's hard cap $s \le s_{\max} = 2$.
 5. No explicit warm-up period is used or needed: the EMA ramp is an implicit warm-up. A diagnostic comparing EMA cold-start initializations (zero versus first measurement) produced identical accuracy by epoch 3.
 
 **[W3] Given that the paper claims theoretical contributions in the abstract and introduction, could the authors clarify how the propositions help prove whether PGGB actually closes the modality gap or improves convergence speed? Or the abstract and introduction could be reworded to more precisely characterize the theoretical results.**
