@@ -12,7 +12,7 @@ Thank you very much for the positive assessment and for recognizing the repurpos
 | PGGB (probes + boost) | 17.71 | **+1.58%** | ~12.2 GB |
 | PGGB+OGM-GE | 18.71 | +7.34% | ~12.2 GB |
 
-1. The probe-attributable overhead is +1.6%, slightly above the ~1% estimate in Section 4.1, which we will update to the measured figure. The remaining ~5.7 pp in the composed row is OGM-GE's own per-modality contribution computation, incurred by OGM-GE with or without PGGB.
+1. The probe-attributable overhead is +1.58%, slightly above the ~1% estimate in Section 4.1, which we will update to the measured figure. The remaining ~5.7 pp in the composed row is OGM-GE's own per-modality contribution computation, incurred by OGM-GE with or without PGGB.
 2. Peak memory is unchanged across the three configurations (12.1-12.3 GB): each probe is a single linear layer (~3K parameters, or ~0.03% of one ResNet-18 encoder), and the EMA state is a **handful of scalars** (one smoothed accuracy and one smoothed scale per modality).
 3. We will add this table to the appendix.
 
