@@ -32,13 +32,13 @@ Thank you very much for the positive assessment and for recognizing the repurpos
 
 1. At the **first** probe event (iteration 19), both probes are statistically at chance on the 32-sample evaluation half, and the smoothed ordering is inverted by **0.7 pp**, which is noise **around zero**. (The tabulated values are small because the probe-accuracy EMA is still ramping from its zero initialization.)
 2. From the **second** probe event (iteration 39) onward, the utilization gap correctly identifies audio as dominant (+1.2 pp, growing to +12.8 pp by the end of epoch 3), and **no further inversion is observed through epoch 50**.
-3. The only two later inversions (2 of the 500 probe events, both after epoch 50) occur exactly where the smoothed gap passes through zero (-0.3 and -1.3 pp), where the ordering is uninformative by construction. No inversion persisted beyond a single probe event in the instrumented run.
+3. The only two later inversions (2 of the 500 probe events, both after epoch 50) occur exactly where the smoothed gap passes through zero (-0.3 and -1.3 pp), where the ordering is **uninformative by construction**. No inversion persisted beyond a single probe event in the instrumented run.
 4. Exposure to a single misdirected window is small **by construction**: scales initialize at 1 and are refreshed only at probe events, so a misdirected first window carries a smoothed scale of at most $1+\mu\alpha \approx 1.23$ ($\mu=0.3$, $\alpha=0.75$ in this composed run), against the global cap $\bar{s}_m \le s_{\max}=2$ of Prop. 1.
 5. No explicit warm-up period is used: first-window exposure is capped as above, and a diagnostic comparing probe-EMA cold-start initializations (zero versus first measurement) produced indistinguishable final accuracy.
 
 **[W3] Given that the paper claims theoretical contributions in the abstract and introduction, could the authors clarify how the propositions help prove whether PGGB actually closes the modality gap or improves convergence speed? Or the abstract and introduction could be reworded to more precisely characterize the theoretical results.**
 
-**Response.** We agree with your reading and will reword the corresponding sections accordingly.
+**Response.** Thank you for the valuable comment regarding the theoretical contributions. We agree with your reading and will reword the corresponding sections accordingly.
 
 1. The three propositions are **safety properties**: the intervention is bounded (Prop. 1), provably small near exact balance (Prop. 2), and training under the intervention retains the standard nonconvex SGD descent guarantee with a quantified worst-case variance inflation of $s_{\max}^2$ (Prop. 3).
 2. They do not establish that PGGB closes the modality gap or improves convergence speed. Gap closure is supported empirically (Section 4.4: the weak-modality probe rises +9.41 pp while the strong falls only 0.81 pp, and the post-hoc utilization gap shrinks $5.4\times$ versus baseline).
