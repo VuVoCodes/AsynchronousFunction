@@ -35,17 +35,17 @@ In summary:
 
 **[W3] The proposed method of scaling the gradients should not be expected to give significant gains for the Adam optimizer, which is scale-invariant / unit-less. 4 out of 8 datasets use Adam and as expected show barely any improvement. OGM-GE has plausible improvement even with Adam because the GE component goes beyond mere gradient scaling.**
 
-**Response.** Thank you for this observation. You are right about the mechanism, and we measured it. New per-step instrumentation records the applied scale, post-scaling gradient norm, and actual update norm per encoder ($\alpha=0.75$ versus $\alpha=0$, matched seeds):
+**Response.** Thank you for this observation. You are right about the mechanism, and we measured it. Additional per-step instrumentation records the applied scale, post-scaling gradient norm, and actual update norm per encoder ($\alpha=0.75$ versus $\alpha=0$, matched seeds):
 
 | Pipeline (optimizer) | boost scale | grad-norm ratio | **update-norm ratio** |
 |---|---|---|---|
 | CREMA-D (SGD), most-boosted modality | 1.64 | 1.52 | **1.50** |
 | CMU-MOSI (Adam), most-boosted modality | 1.48 | 1.38 | **1.17** |
-| CMU-MOSI (SGD control, new), most-boosted modality | 1.45 | 1.53 | **1.47** |
+| CMU-MOSI (SGD control), most-boosted modality | 1.45 | 1.53 | **1.47** |
 
 1. Under SGD most of the applied boost transmits to parameter updates (1.64 scale, 1.50 update ratio).
 2. Under Adam roughly two-thirds of the applied boost is absorbed by second-moment normalization ($1.48\times$ scale, $1.17\times$ actual updates).
-3. **New control run testing your mechanism directly.** If attenuation is an optimizer property, SGD on the identical MOSI pipeline should restore it, and it does: the modality boosted hardest under Adam transmits 35% of the applied excess scale to updates under Adam and 62% under SGD, and the most-boosted SGD modality matches its applied scale (1.47 against 1.45); each row reports that run's most-boosted modality, and we will provide the full per-modality table.
+3. **Control run testing your mechanism directly.** If attenuation is an optimizer property, SGD on the identical MOSI pipeline should restore it, and it does: the modality boosted hardest under Adam transmits 35% of the applied excess scale to updates under Adam and 62% under SGD, and the most-boosted SGD modality matches its applied scale (1.47 against 1.45); each row reports that run's most-boosted modality, and we will provide the full per-modality table.
 4. Consistently, all headline effects arise on SGD pipelines, and OGM-GE's Adam results similarly rely on its GE noise term rather than pure scaling, as you observe.
 5. We will state the optimizer dependence in Sections 3.3 and 5, add both tables to the appendix, and list optimizer-state-aware actuation as future work.
 
@@ -54,7 +54,7 @@ To test the accuracy consequence, we ran an additional experiment in this window
 | MOSI ($n=5$, composed) | $\alpha=0$ | $\alpha=0.75$ | Boost effect |
 |---|---|---|---|
 | Adam | $72.68 \pm 0.99$ | $72.60 \pm 1.05$ | $-0.09$ pp ($p=0.90$) |
-| SGD (new) | $55.89 \pm 1.03$ | $57.58 \pm 1.04$ | **+1.69 pp** ($p=0.032$, 5/5 seeds) |
+| SGD (control) | $55.89 \pm 1.03$ | $57.58 \pm 1.04$ | **+1.69 pp** ($p=0.032$, 5/5 seeds) |
 
 SGD is not retuned for this pipeline (hence its lower absolute accuracy), so the contrast is within-optimizer only.
 
