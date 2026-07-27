@@ -1,10 +1,10 @@
 # Response to Reviewer tQk1 (Accept, 5)
 
-Thank you very much for the positive assessment and for recognizing the repurposing of linear probes as real-time, stop-gradient meta-controllers as a novel algorithmic concept. All three requested items are addressed below.
+Thank you very much for the positive assessment and for recognizing the repurposing of linear probes as real-time, stop-gradient meta-controllers as a novel algorithmic concept. All three requested items are addressed below; all supporting results are from the submitted paper unless tagged **[NEW]** (run during this discussion period, to be included in the revision).
 
 **[W1] Could the authors provide a detailed wall-clock time and memory consumption for PGGB against baseline training?**
 
-**Response.** Thank you for this practical question. Measured on one RTX 4090, CREMA-D 3-frame, mean seconds/epoch over 7 epochs, identical data pipeline:
+**Response.** Thank you for this practical question. **[NEW]** Measured on one RTX 4090, CREMA-D 3-frame, mean seconds/epoch over 7 epochs, identical data pipeline:
 
 | Configuration | s/epoch | overhead | peak GPU memory |
 |---|---|---|---|
@@ -18,7 +18,7 @@ Thank you very much for the positive assessment and for recognizing the repurpos
 
 **[W2] Could the authors provide early-training probe trajectory plots showing whether the utilization gap correctly identifies the dominant modality from the start, and if any early misdirection occurs? Or is there any warm-up period?**
 
-**Response.** Thank you for this suggestion. We instrumented all 500 probe evaluations of a full CREMA-D training run (every $K=20$ iterations within each 105-iteration epoch, given by the 6,698 training samples at batch size 64, so 5 events per epoch over 100 epochs) and examined the early window. Since plots cannot be attached in this format, we tabulate the EMA-smoothed probe accuracies $\bar{P}_m$ (%) at the early probe events, and will add the corresponding figure to the appendix:
+**Response.** Thank you for this suggestion. **[NEW]** We instrumented all 500 probe evaluations of a full CREMA-D training run (every $K=20$ iterations within each 105-iteration epoch, given by the 6,698 training samples at batch size 64, so 5 events per epoch over 100 epochs) and examined the early window. Since plots cannot be attached in this format, we tabulate the EMA-smoothed probe accuracies $\bar{P}_m$ (%) at the early probe events, and will add the corresponding figure to the appendix:
 
 | Probe event | Iteration (epoch) | $\bar{P}_{\text{audio}}$ | $\bar{P}_{\text{visual}}$ | Gap (pp) |
 |---|---|---|---|---|
@@ -30,7 +30,7 @@ Thank you very much for the positive assessment and for recognizing the repurpos
 | end of epoch 2 | 204 | 25.9 | 16.1 | +9.8 |
 | end of epoch 3 | 309 | 29.3 | 16.5 | +12.8 |
 
-1. At the **first** probe event (iteration 19), both probes are statistically at chance: the raw accuracies on the 32-sample evaluation half are 21% and 28%, both within two binomial standard deviations ($\sigma \approx 6.6$ pp at $n=32$) of the 16.67% chance level for 6 classes. The inverted smoothed ordering (-0.7 pp) therefore carries no signal at this event. (The tabulated values are small because the probe-accuracy EMA is still ramping from its zero initialization.)
+1. At the **first** probe event (iteration 19), both probes are statistically at chance: the raw accuracies on the 32-sample evaluation half are 9.4% (3/32) and 15.6% (5/32), both within two binomial standard deviations ($\sigma \approx 6.6$ pp at $n=32$) of the 16.67% chance level for 6 classes. The inverted smoothed ordering (-0.7 pp) therefore carries no signal at this event. (The tabulated values are small because the probe-accuracy EMA is still ramping from its zero initialization.)
 2. From the **second** probe event (iteration 39) onward, the utilization gap correctly identifies audio as dominant (+1.2 pp, growing to +12.8 pp by the end of epoch 3), and **no further inversion is observed through epoch 50**.
 3. The only two later inversions (2 of the 500 probe events, both after epoch 50) occur exactly where the smoothed gap passes through zero (-0.3 and -1.3 pp). At a near-zero gap, the sign of the ordering reflects estimator noise rather than a change in dominance, so these events convey no misdirection. No inversion persisted beyond a single probe event in the instrumented run.
 4. Exposure to a single misdirected window is small as a direct consequence of the update rule: scales initialize at 1 and are refreshed only at probe events, so a misdirected first window carries a smoothed scale of at most $1+\mu\alpha \approx 1.23$ ($\mu=0.3$, $\alpha=0.75$ in this composed run), against the global cap $\bar{s}_m \le s_{\max}=2$ of Prop. 1.

@@ -1,6 +1,6 @@
 # Response to Reviewer miLe (Reject, 2)
 
-Thank you for a technically sharp review. Your W3 pushed us to run a measurement we should have had all along, and Q7 helped us realize our Table 1 layout invites a misreading.
+Thank you for a technically sharp review. Your W3 pushed us to run a measurement we should have had all along, and Q7 helped us realize our Table 1 layout invites a misreading. Supporting results are from the submitted paper unless tagged **[NEW]** (run in this window, for the revision).
 
 **[Q7, MAJOR] The OGM-GE paper reports 61.59 on CREMA-D. You report 69.14. Where is this discrepancy coming from?**
 
@@ -21,9 +21,9 @@ The revised Table 1 note is presented as follows.
 
 **Response.** We thank you for this sharp observation. We agree that margins under 0.5 pp appear small at first glance, and seven of eight are indeed of that order. We respectfully suggest, however, that Table 1's best-versus-best presentation understates it.
 
-For perspective, on the low-imbalance benchmarks competing methods regress rather than gain (OGM-GE: KS -1.80 pp, Twitter15 -0.27, Sarcasm -0.59), while standalone PGGB is best on all four, at +1.61% measured overhead with 3K-parameter probes (tQk1 W1), a favorable efficiency trade-off.
+For perspective, on the low-imbalance benchmarks competing methods regress rather than gain (OGM-GE: KS -1.80 pp, Twitter15 -0.27, Sarcasm -0.59), while standalone PGGB is best on all four, at +1.61% measured overhead with 3K-parameter probes **[NEW]**, a favorable efficiency trade-off.
 
-On the one benchmark with severe imbalance and trainable encoders, the margin is larger, and we confirmed its robustness: we extended the comparison to $n=15$ per arm, fixing the final five seeds in advance under a stopping rule (all 15 reported, no further additions). PGGB+OGM-GE gives $71.00 \pm 1.46$ versus $69.40 \pm 1.25$ for the $\alpha=0$ arm: **+1.60 pp, 95% Welch CI [0.59, 2.62], Welch $p=0.0032$**, Mann-Whitney $p=0.0054$, $d=1.18$. The $\alpha=0$ arm matches standalone OGM-GE within seed noise (69.14, Table 1), so this is also the margin over the best baseline. We state the trajectory plainly: +2.31 (original 5), +2.06 ($n=10$), +1.60 ($n=15$): the original seeds were favorable draws and the pooled estimate is smaller than first reported; the two later batches are not individually significant, and the pooled CI excludes zero. The updated version adopts the $n=15$ statistics as the headline, with all 30 per-seed values in the appendix.
+On the one benchmark with severe imbalance and trainable encoders, the margin is larger, and we confirmed its robustness: **[NEW]** we extended the comparison to $n=15$ per arm, fixing the final five seeds in advance under a stopping rule (all 15 reported, no further additions). PGGB+OGM-GE gives $71.00 \pm 1.46$ versus $69.40 \pm 1.25$ for the $\alpha=0$ arm: **+1.60 pp, 95% Welch CI [0.59, 2.62], Welch $p=0.0032$**, Mann-Whitney $p=0.0054$, $d=1.18$. The $\alpha=0$ arm matches standalone OGM-GE within seed noise (69.14, Table 1), so this is also the margin over the best baseline. We state the trajectory plainly: +2.31 (original 5), +2.06 ($n=10$), +1.60 ($n=15$): the original seeds were favorable draws and the pooled estimate is smaller than first reported; the two later batches are not individually significant, and the pooled CI excludes zero. The updated version adopts the $n=15$ statistics as the headline, with all 30 per-seed values in the appendix.
 
 In summary:
 
@@ -36,7 +36,7 @@ In summary:
 
 **[W3] The proposed method of scaling the gradients should not be expected to give significant gains for the Adam optimizer, which is scale-invariant / unit-less. 4 out of 8 datasets use Adam and as expected show barely any improvement. OGM-GE has plausible improvement even with Adam because the GE component goes beyond mere gradient scaling.**
 
-**Response.** Thank you for this observation. You are right about the mechanism, and we measured it. Additional per-step instrumentation records the applied scale, post-scaling gradient norm, and actual update norm per encoder ($\alpha=0.75$ versus $\alpha=0$, matched seeds; each row reports that run's most-boosted modality, with the full per-modality table to follow in the appendix):
+**Response.** Thank you for this observation. You are right about the mechanism, and we measured it. **[NEW]** Additional per-step instrumentation records the applied scale, post-scaling gradient norm, and actual update norm per encoder ($\alpha=0.75$ versus $\alpha=0$, matched seeds; each row reports that run's most-boosted modality, with the full per-modality table to follow in the appendix):
 
 | Pipeline (optimizer) | boost scale | grad-norm ratio | **update-norm ratio** |
 |---|---|---|---|
@@ -44,7 +44,7 @@ In summary:
 | CMU-MOSI (Adam), most-boosted modality | 1.48 | 1.38 | **1.17** |
 | CMU-MOSI (SGD control), most-boosted modality | 1.45 | 1.53 | **1.47** |
 
-The table confirms your prediction: under SGD the applied boost reaches the parameter updates (1.50 update ratio at 1.64 applied), under Adam second-moment normalization absorbs roughly two-thirds of it (1.17 at 1.48), and switching the identical MOSI pipeline to SGD restores transmission (1.47 at 1.45). To test the accuracy consequence, we ran an additional experiment in this window: the same composed contrast trained to full budget under both optimizers, 5 matched seeds.
+The table confirms your prediction: under SGD the applied boost reaches the parameter updates (1.50 update ratio at 1.64 applied), under Adam second-moment normalization absorbs roughly two-thirds of it (1.17 at 1.48), and switching the identical MOSI pipeline to SGD restores transmission (1.47 at 1.45). **[NEW]** To test the accuracy consequence, we ran the same composed contrast at full budget under both optimizers, 5 matched seeds.
 
 | MOSI ($n=5$, composed) | $\alpha=0$ | $\alpha=0.75$ | Boost effect |
 |---|---|---|---|
