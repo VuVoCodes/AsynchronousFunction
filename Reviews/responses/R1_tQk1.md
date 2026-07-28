@@ -18,7 +18,7 @@ Thank you very much for the positive assessment and for recognizing the repurpos
 
 **[W2] Could the authors provide early-training probe trajectory plots showing whether the utilization gap correctly identifies the dominant modality from the start, and if any early misdirection occurs? Or is there any warm-up period?**
 
-**Response.** Thank you for this suggestion. **[NEW]** We instrumented all 500 probe evaluations of a full CREMA-D training run (every $K=20$ iterations within each 105-iteration epoch, given by the 6,698 training samples at batch size 64, so 5 events per epoch over 100 epochs) and examined the early window. Since plots cannot be attached in this format, we tabulate the EMA-smoothed probe accuracies $\bar{P}_m$ (%) at the early probe events, and will add the corresponding figure to the appendix:
+**Response.** Thank you for this suggestion. **[NEW]** We instrumented all 500 probe evaluations of a full CREMA-D training run (every $K=20$ iterations within each 105-iteration epoch, given by the 6,698 training samples at batch size 64, so 5 events per epoch over 100 epochs) and examined the early window. Since plots cannot be attached, we tabulate the EMA-smoothed probe accuracies $\bar{P}_m$ (%) at the early probe events, and will add the corresponding figure to the appendix:
 
 | Probe event | Iteration (epoch) | $\bar{P}_{\text{audio}}$ | $\bar{P}_{\text{visual}}$ | Gap (pp) |
 |---|---|---|---|---|
