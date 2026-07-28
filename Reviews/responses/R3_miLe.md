@@ -1,10 +1,10 @@
 # Response to Reviewer miLe (Reject, 2)
 
-Thank you for your comments. Supporting results are from the submitted paper unless tagged **[NEW]** (run in this window, for the revision).
+Thank you for your constructive and technically sharp review. Supporting results are from the submitted paper unless tagged **[NEW]** (run in this window, for the revision).
 
 **[Q7, MAJOR] The OGM-GE paper reports 61.59 on CREMA-D. You report 69.14. Where is this discrepancy coming from?**
 
-**Response.** OGM-GE (Peng et al., CVPR 2022) reports **61.9%** on CREMA-D (their Tables 1 and 2, concatenation fusion). The 61.59 figure is the joint-training baseline row of our own Table 1, and we apologize that the adjacency of these rows invites this reading. Their protocol uses **one visual frame** per clip (their Section 4.2). Two facts resolve the comparison:
+**Response.** OGM-GE (Peng et al., CVPR 2022) reports **61.9%** on CREMA-D (their Tables 1 and 2, concatenation fusion). The 61.59 figure is the joint-training baseline row of our own Table 1. The adjacency of these rows invites the reading, and we will relabel them. Their protocol uses **one visual frame** per clip (their Section 4.2). Two facts resolve the comparison:
 
 1. **We reproduce their result at their operating point.** Our 1-frame ablation (Table 2) yields OGM-GE at $62.47 \pm 1.42$, and their published 61.9 lies within one seed std of our mean.
 2. **Our main table uses 3 frames at 3 fps**, a matched pipeline shared by all methods in Table 1. The richer input raises OGM-GE by +6.7 pp over its 1-frame result. We will correct Section 4.1's protocol attribution ("following OGM-GE").
@@ -19,7 +19,7 @@ The revised Table 1 note is presented as follows.
 
 **[W2] The main results table shows improvements of < 0.5 pp over the best baseline on 7 out of 8 datasets, which is extremely minor.**
 
-**Response.** We agree that margins under 0.5 pp appear small at first glance, and seven of eight are indeed of that order. We respectfully suggest, however, that Table 1's best-versus-best presentation understates it.
+**Response.** Seven of eight margins are of that order. Table 1's best-versus-best presentation, however, understates what the comparison shows.
 
 For perspective, on the low-imbalance benchmarks competing methods regress rather than gain (OGM-GE: KS -1.80 pp, Twitter15 -0.27, Sarcasm -0.59), while standalone PGGB is best on all four, at +1.61% measured overhead with 3K-parameter probes **[NEW]**, a favorable efficiency trade-off.
 
@@ -36,7 +36,7 @@ In summary:
 
 **[W3] The proposed method of scaling the gradients should not be expected to give significant gains for the Adam optimizer, which is scale-invariant / unit-less. 4 out of 8 datasets use Adam and as expected show barely any improvement. OGM-GE has plausible improvement even with Adam because the GE component goes beyond mere gradient scaling.**
 
-**Response.** Thank you for this observation. You are right about the mechanism, and we measured it. **[NEW]** Additional per-step instrumentation records the applied scale, post-scaling gradient norm, and actual update norm per encoder ($\alpha=0.75$ versus $\alpha=0$, matched seeds; each row reports that run's most-boosted modality, with the full per-modality table to follow in the appendix):
+**Response.** We measured the mechanism you describe directly. **[NEW]** Additional per-step instrumentation records the applied scale, post-scaling gradient norm, and actual update norm per encoder ($\alpha=0.75$ versus $\alpha=0$, matched seeds; each row reports that run's most-boosted modality, with the full per-modality table to follow in the appendix):
 
 | Pipeline (optimizer) | boost scale | grad-norm ratio | **update-norm ratio** |
 |---|---|---|---|
