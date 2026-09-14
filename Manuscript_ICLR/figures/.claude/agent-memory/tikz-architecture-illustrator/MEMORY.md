@@ -1,0 +1,2 @@
+- [Figure 1 Layout B gotchas](feedback_figure1_layoutB.md) — Geometry traps for the probes-flank-Boost arrangement in architecture.tex bottom panel
+- [Jumper crossings](feedback_jumper_crossings.md) — Use preaction white halo (3.5pt) for blue-over-green wire crossings in architecture.tex

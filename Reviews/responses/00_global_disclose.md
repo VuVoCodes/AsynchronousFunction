@@ -1,0 +1,65 @@
+# Global response (all reviewers and AC) — full-disclosure version
+
+Thank you all for the careful reading. The reviews converge on a positive view of the core idea (decoupled probe monitoring as an online optimization signal) while asking for stronger empirical attribution, an explanation of the CREMA-D reproduction, and clearer scoping of the theory. During the discussion period we ran new experiments that address every point the AC lists, and we proactively disclose one data-provenance correction below. Details are in the individual responses.
+
+**[AC point 1] Explain the CREMA-D baseline discrepancy raised by miLe.**
+
+**Response.** The figure 61.59 is our joint-training baseline, not the OGM-GE paper's number (they report 61.9 under a 1-frame protocol). Our 1-frame ablation reproduces OGM-GE at $62.47 \pm 1.42$, statistically consistent with their published result, and our main table uses the richer 3-frame protocol of more recent baselines. Full resolution in the response to Reviewer miLe (Q7).
+
+**[AC point 2] Clarify whether and how PGGB changes effective updates under Adam.**
+
+**Response.** We instrumented training to record, at every optimizer step, the applied boost scale, the post-scaling gradient norm, and the norm of the actual parameter update per modality encoder, comparing $\alpha=0.75$ against $\alpha=0$ at matched seeds:
+
+| Pipeline (optimizer) | boost scale | gradient-norm ratio | **update-norm ratio** |
+|---|---|---|---|
+| CREMA-D (SGD), weak modality | 1.64 | 1.52 | **1.50** |
+| CMU-MOSI (Adam), weak modality | 1.48 | 1.38 | **1.17** |
+
+1. Under SGD the boost transmits to parameter updates essentially one-to-one.
+2. Under Adam, second-moment normalization absorbs roughly two-thirds of the applied boost ($1.48\times$ scale, $1.17\times$ actual updates), so the actuation is attenuated but not eliminated (the residual arises from the time-varying scale interacting with Adam's moment estimates).
+3. Reviewer miLe's mechanism argument is correct, and it aligns with our results: all headline effects arise on SGD pipelines, and CMU-MOSI, our one high-imbalance Adam pipeline, is the cleanest demonstration of the attenuation, with the boost engaged in gradient space but muted in parameter space. We will state this optimizer dependence explicitly and add the measurement to the appendix.
+
+**[AC point 3] Isolate the contribution of PGGB from OGM-GE, with uncertainty over their difference.**
+
+**Response.** We doubled the seed count for both arms of the central comparison on CREMA-D 3-frame (five original seeds plus five fresh seeds, identical protocol):
+
+| | OGM-GE + probes active, boost off ($\alpha=0$) | PGGB+OGM-GE ($\alpha=0.75$) |
+|---|---|---|
+| Accuracy, $n=10$ | $69.25 \pm 1.34$ | $71.30 \pm 1.48$ |
+
+1. The two arms hold the entire probe pipeline identical and differ only in the multiplicative scale, so the contrast isolates boost actuation.
+2. Difference **+2.06 pp, 95% Welch CI [0.73, 3.38]**, Welch t-test $p=0.0044$, Mann-Whitney $p=0.0029$, Cohen's $d=1.46$. Seed-matched tests agree: paired t $p=0.026$, Wilcoxon $p=0.020$, with 8 of 10 seed pairs favoring the composition (1 tie, 1 inversion).
+3. For transparency, the five fresh seeds alone give +1.80 pp in the same direction (4 of 5 pairs positive, one tie), not significant at $n=5$ in isolation (CI [-0.42, 4.02]); at the pooled $n=10$ the confidence interval excludes zero.
+
+**[AC point 4, R-tQk1] Early probe trajectories and warm-up.**
+
+**Response.** From per-event instrumentation of all 500 probe evaluations ($K=20$) on CREMA-D: at the first probe event (iteration 19) both probes are at chance level and the smoothed ordering is briefly inverted by 0.7 pp. From the second event (iteration 39) the dominant modality is identified correctly (+1.2 pp, growing to +12.8 pp by the end of epoch 3) and the ordering inverts only twice more in the entire run, exactly where the smoothed gap passes through zero and self-attenuation holds the scales near 1. A per-event table is in the response to tQk1. Worst-case misdirection exposure is a single $K$-step window with smoothed scale at most $1+\mu\alpha$ (approximately 1.23). No explicit warm-up is needed: scales initialize at 1 and the EMA ramp acts as an implicit warm-up. We will add the early-window figure to the appendix.
+
+**[R-tQk1] Wall-clock time and memory.**
+
+**Response.** CREMA-D 3-frame on one RTX 4090 (mean s/epoch over 7 epochs): baseline 17.43, PGGB 17.71 (**+1.6%**), PGGB+OGM-GE 18.71 (+7.4%, of which about 5.8 pp is OGM-GE's own per-modality contribution computation, not the probes). Peak GPU memory is unchanged across the three configurations (~12.2 GB, differences within allocator noise). Each linear probe adds ~3K parameters.
+
+**[Data provenance correction, proactive disclosure]**
+
+**Response.** During rebuttal-period verification we discovered that the preprocessed file used for the column labeled CMU-MOSEI is in fact CH-SIMS (Yu et al., ACL 2020), a Chinese three-modality sentiment benchmark distributed through the same MMSA toolkit: 1,368/456/457 splits, 33-d audio, 709-d vision, 3-class labels. The retrieval error is ours, not the distribution's. All rows of that column were trained and evaluated identically, so the within-column method comparison is internally valid, but as a CH-SIMS result. We re-verified the provenance of every other benchmark against canonical sources (including CMU-MOSI, which is genuine); only this column is affected. We re-ran the full method suite on verified genuine CMU-MOSEI (5 seeds): baseline $62.07 \pm 0.25$, OGM-GE $62.03 \pm 0.25$, PGGB $62.13 \pm 0.18$, PGGB+OGM-GE $62.24 \pm 0.26$, all within 0.21 pp with no significant pairwise difference: the text-dominant flat profile, on which PGGB does not interfere. We will relabel the affected column as CH-SIMS, correct every affected descriptor (Tables 1, 8, 9 and Appendix B.1), and report both benchmarks going forward. Per-modality probes and the $\alpha$-sweep on the corrected data are in the response to gN93.
+
+**[AC point 5] Clarify the dataset-level imbalance score and the choice of the 0.15 threshold.**
+
+**Response.** The dataset-level $\delta$ is the final-epoch EMA-smoothed probe-accuracy gap during baseline training, averaged over 5 seeds (Appendix B.9). On genuine CMU-MOSEI the re-measured value is $\delta = 0.218 \pm 0.005$, so it remains high-imbalance and the categorization is unchanged. We will move the definition into Section 4.1 and add the threshold-sensitivity discussion: under the corrected values, every threshold in $[0.150, 0.218)$ yields the identical categorization under the paper's rule that $\delta$ exceed the threshold, with Twitter15 as the boundary case. Details in the response to gN93.
+
+**[AC point 6] Revise the theoretical claims so they match what the propositions establish.**
+
+**Response.** We agree the propositions are safety properties, not gap-closure or rate results, and Section 3.5 already labels them as such. We will align the abstract and introduction wording with this framing in the camera-ready ("we establish three safety properties" rather than any suggestion of a convergence-improvement claim). Details in the responses to tQk1 and gN93.
+
+**Summary of camera-ready revisions**
+
+So the committed changes are auditable in one place, the camera-ready will include:
+
+1. **Table 1 (CREMA-D headline):** replaced by the $n=10$ statistics ($71.30 \pm 1.48$, +2.06 pp, 95% CI [0.73, 3.38]), with per-seed values in the appendix, and explicit row labeling so the baseline row cannot be mistaken for a published OGM-GE number (miLe Q7).
+2. **Sentiment column:** the affected column relabeled CH-SIMS with every descriptor corrected (Tables 1, 8, 9 and Appendix B.1), and a genuine CMU-MOSEI column added with the re-run results and re-measured $\delta = 0.218 \pm 0.005$ (disclosure above).
+3. **Section 4.1:** measured wall-clock overhead (+1.6%) replaces the ~1% estimate, and the dataset-level $\delta$ definition moves into the main text with the threshold-sensitivity discussion (gN93 Q2, AC point 5).
+4. **Sections 3.3 and 5:** explicit statement of the optimizer dependence of gradient scaling, with the Adam update-norm measurement added to the appendix and optimizer-state-aware actuation listed as future work (miLe W3, AC point 2).
+5. **Abstract and introduction:** theory characterized as three safety properties, with the rate-level analysis stated as open (tQk1 W3, miLe Q6, AC point 6).
+6. **Appendix (probe diagnostics):** early-window trajectory figure and warm-up discussion from the per-event instrumentation (tQk1 W2, AC point 4).
+7. **Limitations:** expanded to cover safety-guarantee scoping at high imbalance, threshold sensitivity with the Twitter15 boundary case, and the undertrained-versus-intrinsically-less-informative distinction (gN93).
+8. **Clarity fixes** (miLe Q1-Q6): definition of the fusion classifier $g$ after Eq. 1, rewritten closing paragraph of Section 3.1, replacement of the unclear L147 sentence, one sentence on $s_m$ at exact balance, and enumeration of the 2-4 modality configurations in Section 4.1.

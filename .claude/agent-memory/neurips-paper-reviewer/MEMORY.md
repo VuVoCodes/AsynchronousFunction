@@ -6,4 +6,9 @@
 - [Framing trajectory decision](project_framing_trajectory.md) — 2026-04-23 boost-first vs monitoring-first vs hybrid; recommended hybrid with three-way ablation
 - [Figure 1 evaluation history](project_figure1_evaluation.md) — 2026-04-27 finalized: external standalone TikZ, K-step EMA annotation, conditional approve with 2 minor polish items
 - [2026-05-02 Appendix audit](review_20260502_appendix_audit.md) — App. A/B.1-B.8 reviewer-style flags: B.5 single-seed BLOCK, B.1 no URLs BLOCK, App. A measurability order
+- [Disclosure path chosen (2026-07-25)](project_disclosure_path.md) — Rebuttal proactively discloses CMU-MOSEI=CH-SIMS mislabel; AC role-play → accept-conditional, resolved all 6 meta points
+- [R1 rebuttal soundness audit (2026-07-25)](review_20260725_R1_rebuttal_soundness.md) — 4 blockers in R1_tQk1.md; epsilon guard makes Prop. 2 self-attenuation vacuous, two-EMA confusion, table arithmetic
+- [R3 rebuttal audit, 4 passes (2026-07-25)](review_20260725_R3_rebuttal_soundness.md) — R3_miLe.md final verdict 2→3; Adam-inert signature in Table 1, self-attenuation falsified by delta table, W4 survives 83/17
+- [R2 rebuttal audit, 3 passes (2026-07-25)](review_20260725_R2_rebuttal_soundness.md) — R2_gN93.md: alpha sweep clipped by s_max; 26.8 vs 12.53 pp delta protocol clash; Q4 answer confounded by 5-d frozen features
+- [Rebuttal etiquette audit (2026-07-25)](review_20260725_rebuttal_etiquette.md) — Form/tone only: R1 1/3, R2 2/5, R3 5/7; recurring defect is missing blame-the-paper beat on CASE B items
 
