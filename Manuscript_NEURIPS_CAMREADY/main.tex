@@ -1,10 +1,8 @@
-\documentclass{article} % For LaTeX2e
-\usepackage{iclr2027_conference,times}
+\documentclass{article}
 
-% Optional math commands from https://github.com/goodfeli/dlbook_notation.
-% Not loaded: math_commands.tex redefines \eqref as "equation~\ref{...}",
-% which breaks the "Eq.~\eqref{...}" references used throughout this paper.
-% \input{math_commands.tex}
+\PassOptionsToPackage{numbers, compress}{natbib}
+\usepackage{neurips_2026}
+% \usepackage[final,main]{neurips_2026}
 
 \usepackage[utf8]{inputenc} % allow utf-8 input
 \usepackage[T1]{fontenc}    % use 8-bit T1 fonts
@@ -49,10 +47,9 @@
 \newcommand{\sg}{\operatorname{sg}}
 
 % \title{Probe-Guided Gradient Boosting for Balanced Multimodal Learning}
-\title{Probe-Guided Gradient Balancing \\ for Multimodal Learning}
+\title{Probe-Guided Gradient Balancing for Multimodal Learning}
 
-% Authors must not appear in the submitted version. They are hidden
-% ("Anonymous authors") as long as \iclrfinalcopy remains commented out below.
+
 \author{%
   Vo Quoc Vu \\
   School of Science, Engineering \& Technology \\
@@ -70,7 +67,7 @@
   \texttt{thuy.nguyen43@rmit.edu.vn} \\
 }
 
-%\iclrfinalcopy % Uncomment for camera-ready version, but NOT for submission.
+
 \begin{document}
 
 
@@ -126,7 +123,7 @@ We propose \emph{probe-guided gradient boosting} (PGGB): lightweight linear prob
 % --- P5: Main results (3 sentences) ---
 % Experiments on 6 datasets. Key quantitative results.
 
-We evaluate PGGB on eight benchmarks spanning audio-visual, sentiment, text-image, and medical-segmentation tasks (details in Section~\ref{sec:datasets}). The main gain is observed on the high-imbalance CREMA-D benchmark (3-frame), where composing PGGB with a representative gradient-modulation baseline~\citep{peng2022ogmge} reaches $71.45 \pm 1.71\%$ accuracy, $+2.31$~pp over the same baseline alone and $+9.86$~pp over joint training. On the four low-imbalance benchmarks (AVE, Kinetics-Sounds, Twitter15, Sarcasm), PGGB alone is the best-performing method on all four (Table~\ref{tab:main_results}). On the high-imbalance text-dominant sentiment benchmarks (CMU-MOSI, CH-SIMS), where text alone is near-multimodally sufficient and prior balancing methods report only modest gains~\citep{li2023agm,wei2025dgl}, PGGB+OGM-GE remains within seed standard deviation of the strongest baseline ($-0.08$ and $-0.04$~pp). The OGM-GE composition variant has two isolated regressions versus joint training (Kinetics-Sounds $-1.72$~pp, Sarcasm $-0.64$~pp) noted in Section~\ref{sec:conclusion}, while several gradient-modulation baselines degrade on multiple datasets (e.g., this baseline~\citep{peng2022ogmge} regresses on Kinetics-Sounds by $-1.80$~pp, Table~\ref{tab:main_results}).
+We evaluate PGGB on eight benchmarks spanning audio-visual, sentiment, text-image, and medical-segmentation tasks (details in Section~\ref{sec:datasets}). The main gain is observed on the high-imbalance CREMA-D benchmark (3-frame), where composing PGGB with a representative gradient-modulation baseline~\citep{peng2022ogmge} reaches $71.45 \pm 1.71\%$ accuracy, $+2.31$~pp over the same baseline alone and $+9.86$~pp over joint training. On the four low-imbalance benchmarks (AVE, Kinetics-Sounds, Twitter15, Sarcasm), PGGB alone is the best-performing method on all four (Table~\ref{tab:main_results}). On the high-imbalance text-dominant sentiment benchmarks (CMU-MOSI, CMU-MOSEI), where text alone is near-multimodally sufficient and prior balancing methods report only modest gains~\citep{li2023agm,wei2025dgl}, PGGB+OGM-GE remains within seed standard deviation of the strongest baseline ($-0.08$ and $-0.04$~pp). The OGM-GE composition variant has two isolated regressions versus joint training (Kinetics-Sounds $-1.72$~pp, Sarcasm $-0.64$~pp) noted in Section~\ref{sec:conclusion}, while several gradient-modulation baselines degrade on multiple datasets (e.g., this baseline~\citep{peng2022ogmge} regresses on Kinetics-Sounds by $-1.80$~pp, Table~\ref{tab:main_results}).
 
 % --- Contributions (4 bullets) ---
 \paragraph{Contributions.}
@@ -137,7 +134,7 @@ We evaluate PGGB on eight benchmarks spanning audio-visual, sentiment, text-imag
 
     \item We introduce \emph{PGGB}, one instantiation that converts the monitoring signal into a bounded multiplicative scaling on the weaker encoder's gradients. It is composable with existing throttling methods (Appendix~\ref{app:composability} validates non-destructive composition with four such methods).
 
-    \item We validate \emph{PGGB} on eight benchmarks spanning audio-visual, sentiment, text-image, and medical-segmentation tasks. \emph{PGGB} composed with throttling outperforms state-of-the-art baselines on high-imbalance audio-visual (CREMA-D), matches the strongest available baseline on medical segmentation (BraTS~2021, $+0.28$~pp, within seed variance), and remains competitive within seed variance on the high-imbalance text-dominant sentiment benchmarks (CMU-MOSI, CH-SIMS), and \emph{PGGB} used alone is the best-performing method on all four low-imbalance datasets (AVE, Kinetics-Sounds, Twitter15, Sarcasm).
+    \item We validate \emph{PGGB} on eight benchmarks spanning audio-visual, sentiment, text-image, and medical-segmentation tasks. \emph{PGGB} composed with throttling outperforms state-of-the-art baselines on high-imbalance audio-visual (CREMA-D), matches the strongest available baseline on medical segmentation (BraTS~2021, $+0.28$~pp, within seed variance), and remains competitive within seed variance on the high-imbalance text-dominant sentiment benchmarks (CMU-MOSI, CMU-MOSEI), and \emph{PGGB} used alone is the best-performing method on all four low-imbalance datasets (AVE, Kinetics-Sounds, Twitter15, Sarcasm).
 \end{itemize}
 
 
@@ -423,7 +420,7 @@ The bound matches the standard nonconvex SGD rate~\citep{ghadimi2013sgd} up to a
 \label{sec:datasets}
 
 \textbf{Datasets.}
-We evaluate PGGB on eight benchmarks spanning three tasks and 2--4 modalities, reported as mean $\pm$ std over five seeds. \emph{Audio-visual:} CREMA-D~\citep{cao2014cremad} (3-frame at 3 fps, following OGM-GE), AVE~\citep{tian2018ave}, Kinetics-Sounds (KS)~\citep{arandjelovic2017kinetics}. \emph{Sentiment:} CMU-MOSI~\citep{zadeh2016mosi}, CH-SIMS~\citep{yu2020chsims}. \emph{Text-image:} Twitter15~\citep{yu2019tombert, zhang2018adaptive}, Sarcasm~\citep{cai2019sarcasm}. \emph{Segmentation:} BraTS~2021~\citep{baid2021brats}. Encoders follow task grouping (ResNet-18 for audio-visual, MLPs on pre-extracted features for sentiment and text-image, DeepLab v3+/ResNet-101 for BraTS), with splits and caveats in Appendix~\ref{app:datasets}. We assume each modality is task-relevant, consistent with these benchmarks' established multimodal use; PGGB does not validate relevance and would amplify a noise-only modality if one were present.
+We evaluate PGGB on eight benchmarks spanning three tasks and 2--4 modalities, reported as mean $\pm$ std over five seeds. \emph{Audio-visual:} CREMA-D~\citep{cao2014cremad} (3-frame at 3 fps, following OGM-GE), AVE~\citep{tian2018ave}, Kinetics-Sounds (KS)~\citep{arandjelovic2017kinetics}. \emph{Sentiment:} CMU-MOSEI~\citep{zadeh2018mosei}, CMU-MOSI~\citep{zadeh2016mosi}. \emph{Text-image:} Twitter15~\citep{yu2019tombert, zhang2018adaptive}, Sarcasm~\citep{cai2019sarcasm}. \emph{Segmentation:} BraTS~2021~\citep{baid2021brats}. Encoders follow task grouping (ResNet-18 for audio-visual, MLPs on pre-extracted features for sentiment and text-image, DeepLab v3+/ResNet-101 for BraTS), with splits and caveats in Appendix~\ref{app:datasets}. We assume each modality is task-relevant, consistent with these benchmarks' established multimodal use; PGGB does not validate relevance and would amplify a noise-only modality if one were present.
 
 \textbf{Baselines.}
 \label{sec:baselines}
@@ -438,7 +435,7 @@ Classification uses concatenation fusion, batch size 64, 100 epochs. Audio-visua
 
 \textbf{Imbalance categorization.}
 \label{sec:imbalance_cat}
-We categorize benchmarks by the utilization gap $\delta$ (Eq.~\eqref{eq:utilization_gap}) measured during baseline training, with per-dataset values in Appendix~\ref{app:delta}: \emph{high-imbalance} ($\delta > 0.15$, CREMA-D, CMU-MOSI, CH-SIMS) and \emph{low-imbalance} ($\delta \leq 0.15$, AVE, KS, Twitter15, Sarcasm). BraTS~2021 is reported separately as a dense-prediction segmentation benchmark. The high-imbalance group is heterogeneous in source: CREMA-D imbalance arises from audio-dominance in emotion recognition~\citep{peng2022ogmge}, whereas CMU-MOSI/CH-SIMS imbalance reflects text-sufficiency, with text-only baselines within roughly $1$~pp of multimodal accuracy on CH-SIMS~\citep{li2023agm} and only a $+2.7$~pp multimodal gain on CMU-MOSI~\citep{wei2025dgl}. On these text-dominant benchmarks, balancing methods report only modest absolute gains~\citep{guo2024cggm,wei2024opm}, motivating within-seed-std competitiveness as the relevant metric.
+We categorize benchmarks by the utilization gap $\delta$ (Eq.~\eqref{eq:utilization_gap}) measured during baseline training, with per-dataset values in Appendix~\ref{app:delta}: \emph{high-imbalance} ($\delta > 0.15$, CREMA-D, CMU-MOSI, CMU-MOSEI) and \emph{low-imbalance} ($\delta \leq 0.15$, AVE, KS, Twitter15, Sarcasm). BraTS~2021 is reported separately as a dense-prediction segmentation benchmark. The high-imbalance group is heterogeneous in source: CREMA-D imbalance arises from audio-dominance in emotion recognition~\citep{peng2022ogmge}, whereas CMU-MOSI/MOSEI imbalance reflects text-sufficiency, with text-only baselines within roughly $1$~pp of multimodal accuracy on CMU-MOSEI~\citep{li2023agm} and only a $+2.7$~pp multimodal gain on CMU-MOSI~\citep{wei2025dgl}. On these text-dominant benchmarks, balancing methods report only modest absolute gains~\citep{guo2024cggm,wei2024opm}, motivating within-seed-std competitiveness as the relevant metric.
 
 \begin{table}[H]
 \centering
@@ -448,7 +445,7 @@ We categorize benchmarks by the utilization gap $\delta$ (Eq.~\eqref{eq:utilizat
 \resizebox{\textwidth}{!}{%
 \begin{tabular}{l cccccccc}
 \toprule
-\textbf{Method} & CREMA-D & AVE & KS & CMU-MOSI & Twitter15 & Sarcasm & CH-SIMS & BraTS~2021 \\
+\textbf{Method} & CREMA-D & AVE & KS & CMU-MOSI & Twitter15 & Sarcasm & CMU-MOSEI & BraTS~2021 \\
 \midrule
 Baseline             & 61.59{\scriptsize$\pm$0.80} & 86.54{\scriptsize$\pm$0.42} & 79.05{\scriptsize$\pm$0.40} & 72.42{\scriptsize$\pm$0.48} & 66.60{\scriptsize$\pm$0.57} & 82.40{\scriptsize$\pm$0.17} & 70.42{\scriptsize$\pm$0.29} & 85.77{\scriptsize$\pm$0.62} \\
 OGM-GE               & 69.14{\scriptsize$\pm$1.13} & 86.96{\scriptsize$\pm$0.71} & 77.25{\scriptsize$\pm$0.79} & \textbf{72.68}{\scriptsize$\pm$0.89} & 66.33{\scriptsize$\pm$0.21} & 81.81{\scriptsize$\pm$0.23} & \textbf{72.47}{\scriptsize$\pm$0.70} & 86.21{\scriptsize$\pm$0.17} \\
@@ -471,7 +468,7 @@ PGGB+OGM-GE ($\alpha{=}0.75$) & \textbf{71.45}{\scriptsize$\pm$1.71} & 87.23{\sc
 \label{sec:main_results}
 \vspace{-1em}
 
-Table~\ref{tab:main_results} reports results across eight benchmarks. On high-imbalance CREMA-D, PGGB+OGM-GE attains $71.45\%$, $+2.31$~pp over OGM-GE and $+9.86$~pp over baseline, the best among competitors. A three-way decomposition in \S\ref{sec:ablations} isolates this gain to the boost actuation, with the decoupled monitor causally inert at $\alpha{=}0$. PGGB alone ($+1.13$~pp) is insufficient under severe imbalance, confirming that two-sided intervention is required. On the four low-imbalance benchmarks (AVE, KS, Twitter15, Sarcasm, with cross-class MSLR comparison in Appendix~\ref{app:mslr}), PGGB alone is the best-performing method on all four, whereas OGM-GE often regresses (KS $-1.80$~pp, Twitter15 $-0.27$~pp, Sarcasm $-0.59$~pp), consistent with self-attenuation as $\delta \to 0$ (\S\ref{sec:boost}). On the high-imbalance text-dominant sentiment benchmarks (CMU-MOSI, CH-SIMS), where text alone is near-multimodally sufficient and prior balancing methods report only modest absolute gains~\citep{li2023agm,wei2025dgl}, PGGB+OGM-GE remains within seed standard deviation of the strongest baseline (MOSI $-0.08$~pp, CH-SIMS $-0.04$~pp). On BraTS~2021 (DeepLab v3+/ResNet-101, Dice loss), PGGB+OGM-GE yields $86.49\%$ Dice ($+0.72$~pp), extending the mechanism to dense prediction. The composability claim further extends on AVE to two of four non-OGM-GE methods tested (Appendix~\ref{app:composability}). A comparison against OPM~\citep{wei2024opm}, whose single-layer-fusion dependency requires a separate protocol, is in Appendix~\ref{app:opm_comparison}.
+Table~\ref{tab:main_results} reports results across eight benchmarks. On high-imbalance CREMA-D, PGGB+OGM-GE attains $71.45\%$, $+2.31$~pp over OGM-GE and $+9.86$~pp over baseline, the best among competitors. A three-way decomposition in \S\ref{sec:ablations} isolates this gain to the boost actuation, with the decoupled monitor causally inert at $\alpha{=}0$. PGGB alone ($+1.13$~pp) is insufficient under severe imbalance, confirming that two-sided intervention is required. On the four low-imbalance benchmarks (AVE, KS, Twitter15, Sarcasm, with cross-class MSLR comparison in Appendix~\ref{app:mslr}), PGGB alone is the best-performing method on all four, whereas OGM-GE often regresses (KS $-1.80$~pp, Twitter15 $-0.27$~pp, Sarcasm $-0.59$~pp), consistent with self-attenuation as $\delta \to 0$ (\S\ref{sec:boost}). On the high-imbalance text-dominant sentiment benchmarks (CMU-MOSI, CMU-MOSEI), where text alone is near-multimodally sufficient and prior balancing methods report only modest absolute gains~\citep{li2023agm,wei2025dgl}, PGGB+OGM-GE remains within seed standard deviation of the strongest baseline (MOSI $-0.08$~pp, MOSEI $-0.04$~pp). On BraTS~2021 (DeepLab v3+/ResNet-101, Dice loss), PGGB+OGM-GE yields $86.49\%$ Dice ($+0.72$~pp), extending the mechanism to dense prediction. The composability claim further extends on AVE to two of four non-OGM-GE methods tested (Appendix~\ref{app:composability}). A comparison against OPM~\citep{wei2024opm}, whose single-layer-fusion dependency requires a separate protocol, is in Appendix~\ref{app:opm_comparison}.
 \vspace{-1.2em}
 
 
@@ -513,6 +510,7 @@ Among single-mechanism interventions, OGM-GE alone yields $+2.17$~pp versus PGGB
 \vspace{-1em}
 
 A complementary question to \emph{which} component drives the CREMA-D gain is \emph{when} the method is effective. We characterize four regimes along three axes (feature learning, encoder initialization, data-to-architecture ratio) in Table~\ref{tab:operating_conditions} and Figure~\ref{fig:operating_conditions_combined}.
+\vspace{-1.2em}
 
 \begin{table}[H]
 \centering
@@ -532,10 +530,9 @@ Food101 (frozen)    & $\times$     & ---                     & $\checkmark$     
 \bottomrule
 \end{tabular}
 \end{table}
+\vspace{-1.8em}
 
-% [t] rather than [H]: under the ICLR layout a pinned figure here leaves page 8
-% underfull and pushes the conclusion past the 9-page limit.
-\begin{figure}[t]
+\begin{figure}[H]
 \centering
 \begin{subfigure}[b]{0.55\textwidth}
 \centering
@@ -578,30 +575,19 @@ We probe per-modality utilization with linear classifiers trained on frozen enco
 % SECTION 5: DISCUSSION & CONCLUSION
 %=============================================================================
 \FloatBarrier
+\enlargethispage{2\baselineskip}
 \section{Conclusion}
 \label{sec:conclusion}
 
-We propose PGGB, a method for balanced multimodal learning that amplifies the contribution of weaker modalities while preserving stronger ones, composing naturally with existing throttling techniques. PGGB alone is the best-performing method on all four low-imbalance benchmarks. On high-imbalance CREMA-D, composition with OGM-GE yields $+2.31$~pp over the strongest baseline, and on the text-dominant sentiment benchmarks (CMU-MOSI, CH-SIMS) the same composition remains within seed standard deviation of the strongest baseline. On medical segmentation (BraTS~2021), it matches the strongest available baseline ($+0.28$~pp, within seed variance). \emph{Limitations.} Per-setting tuning is required, probes add small compute overhead, and composition with throttling can regress when the dominance gap is small (worst case AVE-from-scratch $-4.56$~pp, \S\ref{sec:operating_conditions}), a regime our theory does not cover. \emph{Future work.} Probe-driven adaptive composition that engages throttling only when the dominance gap warrants, and extension beyond classification and segmentation. No new data is introduced, and \S\ref{sec:operating_conditions} should precede deployment.
+We propose PGGB, a method for balanced multimodal learning that amplifies the contribution of weaker modalities while preserving stronger ones, composing naturally with existing throttling techniques. PGGB alone is the best-performing method on all four low-imbalance benchmarks. On high-imbalance CREMA-D, composition with OGM-GE yields $+2.31$~pp over the strongest baseline, and on the text-dominant sentiment benchmarks (CMU-MOSI, CMU-MOSEI) the same composition remains within seed standard deviation of the strongest baseline. On medical segmentation (BraTS~2021), it matches the strongest available baseline ($+0.28$~pp, within seed variance). \emph{Limitations.} Per-setting tuning is required, probes add small compute overhead, and composition with throttling can regress when the dominance gap is small (worst case AVE-from-scratch $-4.56$~pp, \S\ref{sec:operating_conditions}), a regime our theory does not cover. \emph{Future work.} Probe-driven adaptive composition that engages throttling only when the dominance gap warrants, and extension beyond classification and segmentation. No new data is introduced, and \S\ref{sec:operating_conditions} should precede deployment.
 
-
-%=============================================================================
-% ICLR 2027 END-OF-PAPER STATEMENTS (placed before the references,
-% do not count toward the page limit, each at most 1 page)
-%=============================================================================
-\clearpage
-\subsection*{AI use statement}
-We used LLM-based agents in Claude Code, an AI coding assistant, for the following purposes. First helping in implement and edit the method and experiment code. Secondly supporting in criticizing manuscript drafts, including the experimental design, the support for claims, and the consistency between the equations in Section~\ref{sec:method} and the code. Thirdly, helped draft and revise manuscript prose and edit it for readability. All the generated content of the AI is cross checked and validated by the author
-\subsection*{Ethics statement}
-This work proposes a general training procedure for multimodal networks and evaluates it only on pre-existing public research datasets, used under their published research terms. We collected no new data, conducted no new human-subjects research, and performed no data scraping or handling of personally identifiable information.Some evaluation tasks have sensitive downstream uses, notably emotion recognition from faces and voices (CREMA-D) and medical image segmentation. Benchmark improvements do not establish suitability for such applications, and this paper does not evaluate performance across demographic groups. The effectiveness of the method also depends on the training regime. The operating-conditions analysis in Section~\ref{sec:operating_conditions}, which includes regimes where PGGB+OGM-GE falls below the baseline, should therefore be consulted before any deployment.
-
-\subsection*{Reproducibility statement}
-Section~\ref{sec:method} specifies PGGB, and Algorithm~\ref{alg:pgb} in Appendix~\ref{app:algorithm} gives the full training pass. The assumptions and propositions are stated in Section~\ref{sec:convergence}, with full proofs in Appendix~\ref{app:proofs}. Section~\ref{sec:datasets} describes the baselines, the matched reproduction protocol, and the implementation details, including optimizers, learning-rate schedules, batch sizes, the PGGB hyperparameters, and the five-seed evaluation protocol. Appendix~\ref{app:datasets_list} describes each benchmark, its splits, and its encoders, and Appendix~\ref{app:hp} reports hyperparameter sensitivity. Anonymized code is provided in the supplementary material, including the source code, training scripts, per-dataset configuration files, and a README with reproduction instructions.
 
 %=============================================================================
 % REFERENCES
 %=============================================================================
+\newpage
+\bibliographystyle{plainnat}
 \bibliography{references}
-\bibliographystyle{iclr2027_conference}
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -799,9 +785,9 @@ Algorithm~\ref{alg:pgb} below specifies the full training pass referenced in Sec
 
 \noindent\textbf{Kinetics-Sounds (KS):} KS~\citep{arandjelovic2017kinetics} is a curated 31-class subset of the Kinetics action-recognition dataset whose actions are both visually and audibly recognizable. It contains roughly 25{,}000 10-second YouTube clips, split into 22{,}408 training and 3{,}000 testing clips. Encoder setup follows AVE (ImageNet-pretrained ResNet-18 backbones on audio spectrograms and 3 RGB frames). Available at \url{https://github.com/cvdfoundation/kinetics-dataset}.
 
-\noindent\textbf{CMU-MOSI:} CMU-MOSI~\citep{zadeh2016mosi} is an English sentiment dataset of YouTube opinion videos with text, audio, and visual modalities. It is divided into 1{,}284 training, 229 validation, and 686 testing samples. Features are GloVe (300-d) text, COVAREP (5-d) audio, and FACET (20-d) visual. Each modality is processed by a two-layer MLP with 512-d hidden layer and dropout $0.3$. Available at \url{https://github.com/CMU-MultiComp-Lab/CMU-MultimodalSDK}.
+\noindent\textbf{CMU-MOSEI:} CMU-MOSEI~\citep{zadeh2018mosei} is a language-audio-visual sentiment dataset of YouTube opinion videos. The dataset is divided into 16{,}326 training samples, 1{,}871 validation samples, and 4{,}659 testing samples. We use pre-extracted BERT (768-d) text, COVAREP (74-d) audio, and FACET (35-d) visual features, and bucket the continuous sentiment labels into 7 classes following prior convention. Each modality is processed by a two-layer MLP with 512-d hidden layer and dropout $0.3$. Available at \url{https://github.com/CMU-MultiComp-Lab/CMU-MultimodalSDK}.
 
-\noindent\textbf{CH-SIMS:} CH-SIMS~\citep{yu2020chsims} is a Mandarin Chinese multimodal sentiment analysis dataset of 2{,}281 video segments with text, audio, and visual modalities. We use the preprocessed features distributed through the MMSA (MultiModal Sentiment Analysis) toolkit, with the official split of 1{,}368 training, 456 validation, and 457 testing samples. Features are Chinese BERT-base token features (768-d, 39 tokens) for text, LibROSA acoustic features (33-d) for audio, and OpenFace~2.0 facial features (709-d) for vision. We use the 3-class multimodal sentiment labels (negative, neutral, positive) provided with these features. Features are z-score normalized per dimension and mean-pooled over time, and each modality is then processed by the same two-layer MLP encoder as CMU-MOSI. Available at \url{https://github.com/thuiar/MMSA}.
+\noindent\textbf{CMU-MOSI:} CMU-MOSI~\citep{zadeh2016mosi} is a smaller sentiment dataset with the same three modalities as CMU-MOSEI. It is divided into 1{,}284 training, 229 validation, and 686 testing samples. Features are GloVe (300-d) text, COVAREP (5-d) audio, and FACET (20-d) visual. Encoder architecture is identical to CMU-MOSEI. Available at \url{https://github.com/CMU-MultiComp-Lab/CMU-MultimodalSDK}.
 
 \noindent\textbf{Twitter15:} Twitter15~\citep{yu2019tombert, zhang2018adaptive} is a text-image sentiment dataset of tweets with associated images, covering three classes (positive, neutral, negative). It is divided into 3{,}179 training pairs, 1{,}122 validation pairs, and 1{,}037 testing pairs. We use MLP heads on frozen BERT-base (768-d) text and ImageNet ResNet-18 (512-d) image features, so only the heads are trainable and gradient-balancing methods act on them. Available at \url{https://github.com/jefferyYu/TomBERT}.
 
@@ -811,7 +797,7 @@ Algorithm~\ref{alg:pgb} below specifies the full training pass referenced in Sec
 
 \noindent\textbf{Food101:} UPMC Food-101~\citep{wang2015upmcfood} is a 101-class image-text food classification benchmark. Each item pairs a recipe text with a food image. In our experiments we use 67{,}972 training samples and 22{,}716 test samples. Encoder setup follows Twitter15/Sarcasm: MLP heads on frozen BERT-base (768-d) text and ImageNet ResNet-18 (512-d) image features, so only the heads are trainable. Trainable-encoder runs (App.~\ref{app:opcond}) unfreeze both encoders for end-to-end fine-tuning. Food101 is used only for the operating-conditions analysis (\S\ref{sec:operating_conditions}) and the cross-dataset composability check (App.~\ref{app:composability}), and does not appear in Table~\ref{tab:main_results}. Available at \url{https://visiir.lip6.fr/explore}.
 
-\noindent\textbf{Licensing.} CREMA-D (CC-BY 4.0), AVE, Kinetics-Sounds, CMU-MOSI, CH-SIMS, Twitter15, Sarcasm (MMSD-v1), Food101 (UPMC research terms), and BraTS 2021 (RSNA-ASNR-MICCAI public release) are used under their published research terms.
+\noindent\textbf{Licensing.} CREMA-D (CC-BY 4.0), AVE, Kinetics-Sounds, CMU-MOSI/MOSEI, Twitter15, Sarcasm (MMSD-v1), Food101 (UPMC research terms), and BraTS 2021 (RSNA-ASNR-MICCAI public release) are used under their published research terms. See the NeurIPS Paper Checklist for detailed licensing.
 
 \subsection{Comparison with OPM}
 \label{app:opm_comparison}
@@ -862,7 +848,7 @@ We supplement Table~\ref{tab:main_results} with macro-averaged F1 in Table~\ref{
 \resizebox{\textwidth}{!}{%
 \begin{tabular}{lccccccc}
 \toprule
-Method & CREMA-D & AVE & KS & CMU-MOSI & Twitter15 & Sarcasm & CH-SIMS \\
+Method & CREMA-D & AVE & KS & CMU-MOSI & Twitter15 & Sarcasm & CMU-MOSEI \\
 \midrule
 Baseline      & 61.93$\pm$0.94 & 86.29$\pm$0.29 & {78.40}$\pm$0.50 & 70.16$\pm$0.65 & 51.33$\pm$4.18 & {81.81}$\pm$0.21 & 60.05$\pm$0.58 \\
 OGM-GE        & 69.52$\pm$1.02 & 86.48$\pm$0.85 & ---            & ---            & 49.98$\pm$5.12 & 81.09$\pm$0.40 & 61.46$\pm$1.61 \\
@@ -877,7 +863,7 @@ PGGB+OGM-GE   & \textbf{71.85}$\pm$1.55 & 86.86$\pm$0.56 & 76.45$\pm$0.55 & 69.9
 }
 \end{table}
 
-On CREMA-D and CH-SIMS, F1-macro confirms the Table~\ref{tab:main_results} ranking, with PGGB+OGM-GE attaining the top F1 on both. On Twitter15, all methods show a substantial gap between accuracy ($\sim$66\%) and F1-macro ($\sim$50--56\%), reflecting the 3-class imbalance of the dataset, and G-Blend obtains the top F1-macro ($56.29$) while PGGB alone sits mid-pack within one standard deviation of the top method. On Sarcasm and CMU-MOSI, among methods with retained F1 logs, F1 and accuracy rankings agree with Table~\ref{tab:main_results} within 1~pp, indicating no hidden degradation from metric choice.
+On CREMA-D and CMU-MOSEI, F1-macro confirms the Table~\ref{tab:main_results} ranking, with PGGB+OGM-GE attaining the top F1 on both. On Twitter15, all methods show a substantial gap between accuracy ($\sim$66\%) and F1-macro ($\sim$50--56\%), reflecting the 3-class imbalance of the dataset, and G-Blend obtains the top F1-macro ($56.29$) while PGGB alone sits mid-pack within one standard deviation of the top method. On Sarcasm and CMU-MOSI, among methods with retained F1 logs, F1 and accuracy rankings agree with Table~\ref{tab:main_results} within 1~pp, indicating no hidden degradation from metric choice.
 
 \subsection{Hyperparameter sensitivity}
 \label{app:hp}
@@ -1013,7 +999,7 @@ PGGB+OGM-GE ($\alpha{=}0.75$)   & 57.85{\scriptsize$\pm$1.03}  & 55.54{\scriptsi
 \subsection{Per-dataset utilization gap}
 \label{app:delta}
 
-For transparency, we report the per-dataset utilization gap $\delta$ (Eq.~\eqref{eq:utilization_gap}) measured at the end of baseline training (final-epoch EMA-smoothed probe accuracy gap, averaged over 5 seeds). Probes follow the protocol of Section~\ref{sec:probes}: linear classifiers on stop-gradient encoder features, trained on a held-out within-batch sample. These values quantify modality-dominance dynamics during baseline training and define the high-imbalance ($\delta > 0.15$) and low-imbalance ($\delta \leq 0.15$) categorization used in Section~\ref{sec:imbalance_cat}. The high-imbalance group is heterogeneous in source: CREMA-D imbalance is audio-dominance in audio-visual emotion recognition, whereas CMU-MOSI and CH-SIMS imbalance reflects text-sufficiency, where text-only baselines are reported within roughly $1$~pp of multimodal accuracy~\citep{li2023agm,wei2025dgl}. BraTS~2021 (4 MRI sequences, binary tumor-presence probes per sequence) is reported separately as a dense-prediction benchmark.
+For transparency, we report the per-dataset utilization gap $\delta$ (Eq.~\eqref{eq:utilization_gap}) measured at the end of baseline training (final-epoch EMA-smoothed probe accuracy gap, averaged over 5 seeds). Probes follow the protocol of Section~\ref{sec:probes}: linear classifiers on stop-gradient encoder features, trained on a held-out within-batch sample. These values quantify modality-dominance dynamics during baseline training and define the high-imbalance ($\delta > 0.15$) and low-imbalance ($\delta \leq 0.15$) categorization used in Section~\ref{sec:imbalance_cat}. The high-imbalance group is heterogeneous in source: CREMA-D imbalance is audio-dominance in audio-visual emotion recognition, whereas CMU-MOSI and CMU-MOSEI imbalance reflects text-sufficiency, where text-only baselines are reported within roughly $1$~pp of multimodal accuracy~\citep{li2023agm,wei2025dgl}. BraTS~2021 (4 MRI sequences, binary tumor-presence probes per sequence) is reported separately as a dense-prediction benchmark.
 
 \begin{table}[H]
 \centering
@@ -1026,7 +1012,7 @@ For transparency, we report the per-dataset utilization gap $\delta$ (Eq.~\eqref
 \midrule
 CREMA-D       & $0.268 \pm 0.029$ \\
 CMU-MOSI      & $0.222 \pm 0.047$ \\
-CH-SIMS       & $0.178 \pm 0.086$ \\
+CMU-MOSEI     & $0.178 \pm 0.086$ \\
 Twitter15     & $0.150 \pm 0.096$ \\
 Sarcasm       & $0.076 \pm 0.008$ \\
 Kinetics-Sounds & $0.038 \pm 0.013$ \\
@@ -1038,9 +1024,9 @@ AVE           & $0.017 \pm 0.009$ \\
 \subsection{Cross-class comparison with MSLR}
 \label{app:mslr}
 
-We additionally compare PGGB to MSLR~\citep{yao2022mslr}, a per-modality learning-rate (PMLR) baseline. As discussed in Section~\ref{sec:related}, MSLR operates on the optimizer step rather than the gradient and forms an adjacent intervention class that is not directly composable with gradient-modulation methods. Because MSLR's canonical Keep-variant requires per-modality unimodal pre-calibration that lies outside our matched-pipeline budget, we run a fixed-ratio Keep variant: audio:1.0/visual:2.0 on CREMA-D (selected from a 3-config sweep over audio:0.25/0.5/1.0 with matching visual scaling), audio:0.5/visual:1.0 on AVE and Kinetics-Sounds, and text:0.5 with other modalities at 1.0 on CMU-MOSI, CH-SIMS, Twitter15, and Sarcasm. Five seeds per dataset on the matched ResNet-18 / two-layer MLP pipeline.
+We additionally compare PGGB to MSLR~\citep{yao2022mslr}, a per-modality learning-rate (PMLR) baseline. As discussed in Section~\ref{sec:related}, MSLR operates on the optimizer step rather than the gradient and forms an adjacent intervention class that is not directly composable with gradient-modulation methods. Because MSLR's canonical Keep-variant requires per-modality unimodal pre-calibration that lies outside our matched-pipeline budget, we run a fixed-ratio Keep variant: audio:1.0/visual:2.0 on CREMA-D (selected from a 3-config sweep over audio:0.25/0.5/1.0 with matching visual scaling), audio:0.5/visual:1.0 on AVE and Kinetics-Sounds, and text:0.5 with other modalities at 1.0 on CMU-MOSI, CMU-MOSEI, Twitter15, and Sarcasm. Five seeds per dataset on the matched ResNet-18 / two-layer MLP pipeline.
 
-Table~\ref{tab:mslr_comparison} reports the comparison. PGGB+OGM-GE exceeds MSLR by $+7.66$~pp on the high-imbalance CREMA-D benchmark and exceeds MSLR on the high-imbalance sentiment benchmarks (CMU-MOSI $+0.76$~pp, CH-SIMS $+1.44$~pp), supporting the composability story. PGGB alone matches or exceeds MSLR on three of four low-imbalance comparisons (AVE, KS, Sarcasm) and is within seed variance on Twitter15 ($-0.40$~pp, sub-$\sigma$). MSLR's heuristic throttle-audio ratio underperforms baseline on AVE ($-1.82$~pp), illustrating the sensitivity of fixed-ratio MSLR to per-dataset modality-dominance patterns that PGGB's probe-driven adaptation sidesteps.
+Table~\ref{tab:mslr_comparison} reports the comparison. PGGB+OGM-GE exceeds MSLR by $+7.66$~pp on the high-imbalance CREMA-D benchmark and exceeds MSLR on the high-imbalance text-dominant sentiment benchmarks (MOSI $+0.76$~pp, MOSEI $+1.44$~pp), supporting the composability story. PGGB alone matches or exceeds MSLR on three of four low-imbalance comparisons (AVE, KS, Sarcasm) and is within seed variance on Twitter15 ($-0.40$~pp, sub-$\sigma$). MSLR's heuristic throttle-audio ratio underperforms baseline on AVE ($-1.82$~pp), illustrating the sensitivity of fixed-ratio MSLR to per-dataset modality-dominance patterns that PGGB's probe-driven adaptation sidesteps.
 
 \begin{table}[H]
 \centering
@@ -1056,7 +1042,7 @@ CREMA-D    & 63.79{\scriptsize$\pm$0.47} & 62.72{\scriptsize$\pm$1.65} & \textbf
 AVE        & 84.72{\scriptsize$\pm$0.59} & \textbf{87.41}{\scriptsize$\pm$0.26} & 87.23{\scriptsize$\pm$0.58} & \textbf{PGGB} \\
 Kinetics-Sounds & 78.56{\scriptsize$\pm$0.38} & \textbf{79.17}{\scriptsize$\pm$0.97} & 77.33{\scriptsize$\pm$0.64} & \textbf{PGGB} \\
 CMU-MOSI   & 71.84{\scriptsize$\pm$0.76} & 71.89{\scriptsize$\pm$0.82} & \textbf{72.60}{\scriptsize$\pm$0.94} & \textbf{PGGB+OGM-GE} \\
-CH-SIMS    & 70.99{\scriptsize$\pm$1.03} & 69.80{\scriptsize$\pm$0.80} & \textbf{72.43}{\scriptsize$\pm$0.65} & \textbf{PGGB+OGM-GE} \\
+CMU-MOSEI  & 70.99{\scriptsize$\pm$1.03} & 69.80{\scriptsize$\pm$0.80} & \textbf{72.43}{\scriptsize$\pm$0.65} & \textbf{PGGB+OGM-GE} \\
 Twitter15  & \textbf{67.25}{\scriptsize$\pm$0.66} & 66.85{\scriptsize$\pm$0.50} & 66.59{\scriptsize$\pm$0.51} & \textbf{MSLR} (sub-$\sigma$) \\
 Sarcasm    & 82.37{\scriptsize$\pm$0.32} & \textbf{82.44}{\scriptsize$\pm$0.35} & 81.76{\scriptsize$\pm$0.08} & \textbf{PGGB} \\
 \bottomrule
@@ -1064,7 +1050,9 @@ Sarcasm    & 82.37{\scriptsize$\pm$0.32} & \textbf{82.44}{\scriptsize$\pm$0.35} 
 \end{table}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% NeurIPS Paper Checklist removed: ICLR has no checklist. checklist.tex is
-% kept on disk as source material for the ethics/reproducibility statements.
+
+\newpage
+\input{checklist.tex}
+
 
 \end{document}

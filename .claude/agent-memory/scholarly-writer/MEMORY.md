@@ -8,7 +8,10 @@
 - **Style file**: neurips_2025 (used for 2026 submission cycle)
 
 ## Style Conventions
-- **No em-dashes**: User explicitly forbids `---`. Use commas, semicolons, or parentheses.
+- **No em-dashes**: User explicitly forbids `---`. Use commas, periods, or parentheses.
+- **No semicolons in prose** (user rule, supersedes older note): split into sentences or use commas.
+- **ICLR 2027 port** lives in `Manuscript_ICLR/main.tex` (separate from `Manuscript/main.tex`)
+- [Disclosure statements + confirm markers](feedback_disclosure_statements.md): no invented facts, red AUTHORS CONFIRM markers, no dataset names in repro statement
 - **Citations**: `\citep{}` for parenthetical, `\citet{}` for narrative
 - **pp**: "percentage point" abbreviated as "pp" after first use
 - **Tables**: `±` as `$\pm$`, bold best results per column, `\resizebox` from graphicx (NOT adjustbox)
@@ -59,26 +62,25 @@
 - Theory: huang2022modality, du2023suppression, zhang2024unimodal
 - Baselines: guo2024cggm, wei2024mmpareto, wei2024opm, li2023agm, kontras2024mlgm, gao2025arm, huang2025inforeg, wei2025arl, fan2023pmr, hua2024reconboost, yang2025iprm, jiang2025aug, guerra2025miles
 - Probing: alain2017understanding
-- Datasets: cao2014cremad, tian2018ave, arandjelovic2017kinetics, zadeh2018mosei, zadeh2016mosi, baid2021brats
+- Datasets: cao2014cremad, tian2018ave, arandjelovic2017kinetics, zadeh2016mosi, yu2020chsims, baid2021brats (zadeh2018mosei in bib but uncited in ICLR port)
 
 ## Experimental Results (for citing in text)
 - CREMA-D: boost+OGM-GE 71.45 ± 1.71% (+9.86pp over baseline 61.59%)
 - AVE: boost-only 87.41 ± 0.26% (+0.87pp over baseline 86.54%)
 - KS: boost-only 79.17 ± 0.97% (+0.12pp, within noise)
-- MOSEI: OGM-GE 72.47 ± 0.70%, boost+OGM-GE 72.43% (+2.05pp over baseline)
+- CH-SIMS (was mislabeled CMU-MOSEI): OGM-GE 72.47 ± 0.70%, boost+OGM-GE 72.43% (+2.05pp over baseline)
 - MOSI: OGM-GE 72.68 ± 0.89%, boost+OGM-GE 72.60% (+0.26pp over baseline)
 - BraTS: boost 85.98 ± 1.15% Dice (+0.21pp over baseline)
 - Beats CGGM on all 6 datasets
 
 ## Dataset Imbalance Classification
-- HIGH: CREMA-D
-- LOW: AVE, KS, CMU-MOSI
-- MEDIUM: CMU-MOSEI, BraTS 2021
+- ICLR port (delta > 0.15): HIGH = CREMA-D, CMU-MOSI, CH-SIMS; LOW = AVE, KS, Twitter15, Sarcasm; BraTS 2021 separate
+- [CH-SIMS relabel + citation scoping](project_chsims_relabel.md): li2023agm is MOSEI-only evidence, never call CH-SIMS text-dominant
 
 ## Key Framing Decisions
 - CGGM underperformance: architectural mismatch caveat (designed for Transformers, tested on CNN/MLP)
 - KS: OGM-GE degradation (-1.80pp) is the story, not PGGB improvement (+0.12pp)
-- MOSEI/MOSI: "does not interfere" framing, not "helps"
+- CMU-MOSI/CH-SIMS: "within seed std of strongest baseline" framing, not "helps"
 - BraTS: cross-paper numbers caveat always included
 - Variance reduction: "suggestive rather than definitive" hedging
 
