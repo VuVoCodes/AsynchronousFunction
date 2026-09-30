@@ -12,3 +12,5 @@
 - [R2 rebuttal audit, 3 passes (2026-07-25)](review_20260725_R2_rebuttal_soundness.md) — R2_gN93.md: alpha sweep clipped by s_max; 26.8 vs 12.53 pp delta protocol clash; Q4 answer confounded by 5-d frozen features
 - [Rebuttal etiquette audit (2026-07-25)](review_20260725_rebuttal_etiquette.md) — Form/tone only: R1 1/3, R2 2/5, R3 5/7; recurring defect is missing blame-the-paper beat on CASE B items
 
+- [Camera-ready unapplied commitments (2026-09-25)](project_camready_unapplied_commitments.md) — n=15 headline, overhead, Adam, replication wording, CH-SIMS column all still unapplied; check AC_Comments.md first
+- [Camera-ready MOSEI correction audit (2026-09-25)](project_camready_mosei_correction.md) — swap verified clean (p=0.89 tie); residual: 0.04pp bolding, metric context, MOSI binary undisclosed

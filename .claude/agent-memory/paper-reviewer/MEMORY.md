@@ -33,3 +33,6 @@
 - [Introduction review](introduction-review.md) | [Related work v2](related-work-review-v2.md)
 - [Section 3.2 cross-check](section32-crosscheck.md) | [Std inconsistency](std_inconsistency.md)
 - [Model trace audit](audit_trace_2026-04-08.md) — All checkpoints verified
+
+## Camera-ready audits
+- [MOSEI correction audit (2026-09-25)](mosei-correction-audit-2026-09-25.md) — genuine CMU-MOSEI replaced CH-SIMS; values verified clean, but column is statistically flat (ANOVA p=0.36 ex-CGGM), all numbers are epoch-2-9 test peaks, and 5 rebuttal commitments to the AC are unapplied

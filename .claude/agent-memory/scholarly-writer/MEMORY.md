@@ -62,25 +62,25 @@
 - Theory: huang2022modality, du2023suppression, zhang2024unimodal
 - Baselines: guo2024cggm, wei2024mmpareto, wei2024opm, li2023agm, kontras2024mlgm, gao2025arm, huang2025inforeg, wei2025arl, fan2023pmr, hua2024reconboost, yang2025iprm, jiang2025aug, guerra2025miles
 - Probing: alain2017understanding
-- Datasets: cao2014cremad, tian2018ave, arandjelovic2017kinetics, zadeh2016mosi, yu2020chsims, baid2021brats (zadeh2018mosei in bib but uncited in ICLR port)
+- Datasets: cao2014cremad, tian2018ave, arandjelovic2017kinetics, zadeh2016mosi, baid2021brats, yu2020chsims, liu2022chsimsv2 (both CH-SIMS keys now in the NeurIPS cam-ready bib too; zadeh2018mosei retained but uncited)
 
 ## Experimental Results (for citing in text)
 - CREMA-D: boost+OGM-GE 71.45 ± 1.71% (+9.86pp over baseline 61.59%)
 - AVE: boost-only 87.41 ± 0.26% (+0.87pp over baseline 86.54%)
 - KS: boost-only 79.17 ± 0.97% (+0.12pp, within noise)
-- CH-SIMS (was mislabeled CMU-MOSEI): OGM-GE 72.47 ± 0.70%, boost+OGM-GE 72.43% (+2.05pp over baseline)
+- CH-SIMS (both copies, label-corrected from "CMU-MOSEI"): OGM-GE 72.47% strongest baseline, boost+OGM-GE 72.43% (-0.04 pp), baseline 70.42%
 - MOSI: OGM-GE 72.68 ± 0.89%, boost+OGM-GE 72.60% (+0.26pp over baseline)
 - BraTS: boost 85.98 ± 1.15% Dice (+0.21pp over baseline)
 - Beats CGGM on all 6 datasets
 
 ## Dataset Imbalance Classification
-- ICLR port (delta > 0.15): HIGH = CREMA-D, CMU-MOSI, CH-SIMS; LOW = AVE, KS, Twitter15, Sarcasm; BraTS 2021 separate
-- [CH-SIMS relabel + citation scoping](project_chsims_relabel.md): li2023agm is MOSEI-only evidence, never call CH-SIMS text-dominant
+- delta > 0.15: HIGH = CREMA-D (0.268), CMU-MOSI (0.222), CH-SIMS (0.178). LOW = Twitter15 (0.150), Sarcasm, KS, AVE. BraTS 2021 separate
+- [Sentiment column provenance](project_sentiment_column_provenance.md): both copies now say CH-SIMS with original numbers. Cite liu2022chsimsv2 for text-PREDOMINANCE only, never li2023agm (MOSEI-only)
 
 ## Key Framing Decisions
 - CGGM underperformance: architectural mismatch caveat (designed for Transformers, tested on CNN/MLP)
 - KS: OGM-GE degradation (-1.80pp) is the story, not PGGB improvement (+0.12pp)
-- CMU-MOSI/CH-SIMS: "within seed std of strongest baseline" framing, not "helps"
+- CMU-MOSI/CH-SIMS: "within seed std of strongest baseline" framing, not "helps" (MOSI -0.08 pp, CH-SIMS -0.04 pp)
 - BraTS: cross-paper numbers caveat always included
 - Variance reduction: "suggestive rather than definitive" hedging
 
