@@ -242,6 +242,7 @@ Each multimodal sample comprises $M$ inputs $\{\mathbf{x}_m\}_{m=1}^{M}$, one pe
 \end{equation}
 %
 Each $\mathbf{z}_m$ is a real value feature vector in $\mathbb{R}^d$, with $d$ common across modalities. 
+Features are concatenated and mapped by the shared fusion classifier $g$ with parameters $\phi$ to a prediction $\hat{y} = g([\mathbf{z}_1;\ldots;\mathbf{z}_M];\,\phi)$, scored against the target $y$:
 %
 \begin{equation}
 \label{eq:joint_loss}
@@ -324,6 +325,7 @@ s_m = \min\!\bigl(1 + \alpha \cdot w_m,\; s_{\max}\bigr),
 \end{equation}
 %
 where $\alpha > 0$ controls the boost strength and $s_{\max} > 1$ caps the maximum amplification to prevent extreme scaling. When modalities are balanced ($\delta$ small), weakness scores become near zero and $s_m \approx 1$, so the method applies no intervention (Proposition~\ref{prop:attenuation} gives the precise continuity bound).
+At exact balance all $\bar{P}_j$ coincide, so the numerator of Eq.~\eqref{eq:weakness} vanishes, the denominator equals $\epsilon > 0$, and $s_m = 1$ exactly.
 
 \paragraph{Step 3: Smoothing and gradient modification.}
 To avoid abrupt changes in the boost signal, we apply temporal smoothing to the scales. We use a separate exponential moving average (EMA), distinct from the probe-accuracy EMA in Eq.~\eqref{eq:ema_probe}, though our analysis (Propositions~\ref{prop:attenuation} and~\ref{prop:convergence}) is stated specifically for this EMA:
@@ -408,6 +410,9 @@ where $\Delta_{\loss} = \loss(\theta_0) - \loss^{*}$ is the initial optimality g
 The bound matches the standard nonconvex SGD rate~\citep{ghadimi2013sgd} up to an $s_{\max}^2$ factor in the variance term, a controlled increase ($s_{\max}=2$), and Proposition~\ref{prop:attenuation} ensures this cost is incurred only when imbalance is present. The smoothness constant $L$ in Assumption~\ref{asm:smooth} is loss-dependent, determined by the choice of $\ell$ in Eq.~\eqref{eq:joint_loss}; in our experiments, the per-task learning rate (Section~\ref{sec:experiments}) is selected consistent with the descent inequality for the corresponding $\ell$.
 
 
+\paragraph{Scope in the high-imbalance regime.}
+Proposition~\ref{prop:convergence} is uniform in the imbalance level: it holds for any utilization gap, provided the step size satisfies $\eta \le 1/(L s_{\max}^2)$. What limits its reach is the optimizer rather than the imbalance, since the proof assumes SGD. On high-imbalance benchmarks trained with SGD, the guarantee is therefore that PGGB preserves standard descent with gradient variance inflated by at most $s_{\max}^2 = 4$. The sentiment and text-image benchmarks are trained with Adam (Section~\ref{sec:experiments}) and fall outside this assumption, so our claims there rest on the measured results alone. Proposition~\ref{prop:attenuation} is the complementary guarantee at the balanced end, bounding the intervention by $|s_m - 1| \le \alpha \Delta / (\Delta + \epsilon)$, which tightens as the gap shrinks and gives $s_m = 1$ exactly at exact balance. For diagnosis, the operating-conditions analysis (Section~\ref{sec:operating_conditions}) identifies the regime in which composition becomes harmful, a thin data budget together with weak inherent asymmetry, and localizes the failure to the throttling component rather than to the boost. The monitored quantities $\delta$ and $\bar{s}_m$ can be logged during training as an early caution, since a small dominance gap signals that composing with throttling is not warranted, and an automated criterion for this decision remains future work.
+
 %=============================================================================
 % SECTION 4: EXPERIMENTS
 %=============================================================================
@@ -420,7 +425,7 @@ The bound matches the standard nonconvex SGD rate~\citep{ghadimi2013sgd} up to a
 \label{sec:datasets}
 
 \textbf{Datasets.}
-We evaluate PGGB on eight benchmarks spanning three tasks and 2--4 modalities, reported as mean $\pm$ std over five seeds. \emph{Audio-visual:} CREMA-D~\citep{cao2014cremad} (3-frame at 3 fps, following OGM-GE), AVE~\citep{tian2018ave}, Kinetics-Sounds (KS)~\citep{arandjelovic2017kinetics}. \emph{Sentiment:} CH-SIMS~\citep{yu2020chsims}, CMU-MOSI~\citep{zadeh2016mosi}. \emph{Text-image:} Twitter15~\citep{yu2019tombert, zhang2018adaptive}, Sarcasm~\citep{cai2019sarcasm}. \emph{Segmentation:} BraTS~2021~\citep{baid2021brats}. Encoders follow task grouping (ResNet-18 for audio-visual, MLPs on pre-extracted features for sentiment and text-image, DeepLab v3+/ResNet-101 for BraTS), with splits and caveats in Appendix~\ref{app:datasets}. We assume each modality is task-relevant, consistent with these benchmarks' established multimodal use; PGGB does not validate relevance and would amplify a noise-only modality if one were present.
+We evaluate PGGB on eight benchmarks spanning three tasks and 2--4 modalities, reported as mean $\pm$ std over five seeds. Audio-visual and text-image benchmarks use two modalities, sentiment three (text, audio, vision), and BraTS~2021 four MRI sequences. \emph{Audio-visual:} CREMA-D~\citep{cao2014cremad} (3-frame at 3 fps, following OGM-GE), AVE~\citep{tian2018ave}, Kinetics-Sounds (KS)~\citep{arandjelovic2017kinetics}. \emph{Sentiment:} CH-SIMS~\citep{yu2020chsims}, CMU-MOSI~\citep{zadeh2016mosi}. \emph{Text-image:} Twitter15~\citep{yu2019tombert, zhang2018adaptive}, Sarcasm~\citep{cai2019sarcasm}. \emph{Segmentation:} BraTS~2021~\citep{baid2021brats}. Encoders follow task grouping (ResNet-18 for audio-visual, MLPs on pre-extracted features for sentiment and text-image, DeepLab v3+/ResNet-101 for BraTS), with splits and caveats in Appendix~\ref{app:datasets}. We assume each modality is task-relevant, consistent with these benchmarks' established multimodal use; PGGB does not validate relevance and would amplify a noise-only modality if one were present.
 
 \textbf{Baselines.}
 \label{sec:baselines}
@@ -435,7 +440,7 @@ Classification uses concatenation fusion, batch size 64, 100 epochs. Audio-visua
 
 \textbf{Imbalance categorization.}
 \label{sec:imbalance_cat}
-We categorize benchmarks by the utilization gap $\delta$ (Eq.~\eqref{eq:utilization_gap}) measured during baseline training, with per-dataset values in Appendix~\ref{app:delta}: \emph{high-imbalance} ($\delta > 0.15$, CREMA-D, CMU-MOSI, CH-SIMS) and \emph{low-imbalance} ($\delta \leq 0.15$, AVE, KS, Twitter15, Sarcasm). BraTS~2021 is reported separately as a dense-prediction segmentation benchmark. The high-imbalance group is heterogeneous in source: CREMA-D imbalance arises from audio-dominance in emotion recognition~\citep{peng2022ogmge}, whereas CMU-MOSI/CH-SIMS imbalance reflects text-sufficiency, with text-only baselines within roughly $1$~pp of multimodal accuracy on CH-SIMS~\citep{liu2022chsimsv2} and only a $+2.7$~pp multimodal gain on CMU-MOSI~\citep{wei2025dgl}. On these text-dominant benchmarks, balancing methods report only modest absolute gains~\citep{guo2024cggm,wei2024opm}, motivating within-seed-std competitiveness as the relevant metric.
+We categorize benchmarks by the utilization gap $\delta$ (Eq.~\eqref{eq:utilization_gap}) measured during baseline training, with per-dataset values in Appendix~\ref{app:delta}: \emph{high-imbalance} ($\delta > 0.15$, CREMA-D, CMU-MOSI, CH-SIMS) and \emph{low-imbalance} ($\delta \leq 0.15$, AVE, KS, Twitter15, Sarcasm). Here $\delta$ is the final-epoch EMA-smoothed probe-accuracy gap under baseline training with no intervention, averaged over five seeds, rather than a statistic over the full training trajectory, and it is measured on the seven classification benchmarks. The threshold is not tuned. Sorting the measured values gives AVE $0.017$, KS $0.038$, Sarcasm $0.076$, Twitter15 $0.150$, CH-SIMS $0.178$, CMU-MOSI $0.222$, and CREMA-D $0.268$, with no benchmark falling between $0.150$ and $0.178$, so every threshold in that interval produces the identical categorization and no result depends on the specific value $0.15$. Because $\delta$ is measured on baseline training alone, before any method is applied, the categorization is fixed independently of any method's results. Twitter15 ($0.150 \pm 0.096$) and CH-SIMS ($0.178 \pm 0.086$) lie closest to the threshold and carry the largest seed variances, so we flag both as boundary cases. BraTS~2021 is reported separately as a dense-prediction segmentation benchmark. The high-imbalance group is heterogeneous in source: CREMA-D imbalance arises from audio-dominance in emotion recognition~\citep{peng2022ogmge}, whereas CMU-MOSI/CH-SIMS imbalance reflects text-sufficiency, with text-only baselines within roughly $1$~pp of multimodal accuracy on CH-SIMS~\citep{liu2022chsimsv2} and only a $+2.7$~pp multimodal gain on CMU-MOSI~\citep{wei2025dgl}. On these text-dominant benchmarks, balancing methods report only modest absolute gains~\citep{guo2024cggm,wei2024opm}, motivating within-seed-std competitiveness as the relevant metric.
 
 \begin{table}[H]
 \centering
@@ -579,7 +584,7 @@ We probe per-modality utilization with linear classifiers trained on frozen enco
 \section{Conclusion}
 \label{sec:conclusion}
 
-We propose PGGB, a method for balanced multimodal learning that amplifies the contribution of weaker modalities while preserving stronger ones, composing naturally with existing throttling techniques. PGGB alone is the best-performing method on all four low-imbalance benchmarks. On high-imbalance CREMA-D, composition with OGM-GE yields $+2.31$~pp over the strongest baseline, and on the text-dominant sentiment benchmarks (CMU-MOSI, CH-SIMS) the same composition remains within seed standard deviation of the strongest baseline. On medical segmentation (BraTS~2021), it matches the strongest available baseline ($+0.28$~pp, within seed variance). \emph{Limitations.} Per-setting tuning is required, probes add small compute overhead, and composition with throttling can regress when the dominance gap is small (worst case AVE-from-scratch $-4.56$~pp, \S\ref{sec:operating_conditions}), a regime our theory does not cover. \emph{Future work.} Probe-driven adaptive composition that engages throttling only when the dominance gap warrants, and extension beyond classification and segmentation. No new data is introduced, and \S\ref{sec:operating_conditions} should precede deployment.
+We propose PGGB, a method for balanced multimodal learning that amplifies the contribution of weaker modalities while preserving stronger ones, composing naturally with existing throttling techniques. PGGB alone is the best-performing method on all four low-imbalance benchmarks. On high-imbalance CREMA-D, composition with OGM-GE yields $+2.31$~pp over the strongest baseline, and on the text-dominant sentiment benchmarks (CMU-MOSI, CH-SIMS) the same composition remains within seed standard deviation of the strongest baseline. On medical segmentation (BraTS~2021), it matches the strongest available baseline ($+0.28$~pp, within seed variance). \emph{Limitations.} Per-setting tuning is required, probes add small compute overhead, and composition with throttling can regress when the dominance gap is small (worst case AVE-from-scratch $-4.56$~pp, \S\ref{sec:operating_conditions}), a composition our propositions do not cover. Those propositions are safety properties: they bound the intervention and, under Proposition~\ref{prop:convergence}'s conditions, preserve standard descent at any imbalance level, but do not guarantee gap closure, which is established only empirically. The two benchmarks nearest the threshold, Twitter15 and CH-SIMS, carry the largest seed variances, so their categorization is provisional (Appendix~\ref{app:delta_stability}). Finally, PGGB does not distinguish undertrained modalities from intrinsically less task-informative ones: composition recovers the former (CREMA-D), whereas on the sentiment benchmarks the weak-modality representations are essentially unchanged (Appendix~\ref{app:posthoc_sentiment}), a diagnosis available only post hoc. \emph{Future work.} Probe-driven adaptive composition that engages throttling only when the dominance gap warrants, and extension beyond classification and segmentation. No new data is introduced, and \S\ref{sec:operating_conditions} should precede deployment.
 
 
 %=============================================================================
@@ -895,6 +900,58 @@ We report single-seed sweeps on CREMA-D (3-frame) for the three principal hyperp
 
 $\alpha$ plateaus within noise above $\alpha{=}1.0$, so the choice between $\alpha{=}0.5$ and $\alpha{=}0.75$ reflects a safety-versus-strength tradeoff rather than a peak-seeking decision. $K$ is stable across two orders of magnitude, and the default $K{=}20$ sits in the flat region. Across $K \in \{1, 5, 10, 50, 100\}$ the best accuracy stays within $70.83$--$71.64\%$ (range $0.81$~pp), so $K{=}20$ sits in the flat plateau and the per-epoch overhead reported in \S\ref{sec:analysis} is essentially free. $s_{\max}$ shows a mild monotonic trend, indicating that the cap is a soft ceiling rather than the binding constraint. Trends smaller than the $\approx 1.5$~pp 5-seed noise floor should be read as within-noise rather than as detected effects. Finally, we did not sweep $\mu$ or $\beta$ in this study. Our defaults ($\mu{=}0.3$, $\beta{=}0.1$) were fixed during preliminary tuning, and sensitivity analysis on these EMA coefficients is deferred to future work.
 
+\subsection{Boost-strength sensitivity on the sentiment benchmarks}
+\label{app:alpha_sentiment}
+
+The sweeps of Appendix~\ref{app:hp} are single-seed and confined to CREMA-D. Because the two high-imbalance sentiment benchmarks respond to the boost differently from CREMA-D (Section~\ref{sec:main_results}), we report a separate multi-seed sweep over the boost strength $\alpha$ on CH-SIMS and CMU-MOSI. Two opposite concerns motivate it. A larger $\alpha$ might unlock additional weak-modality learning that the default setting leaves on the table, or it might instead degrade accuracy by amplifying modalities that are less informative for the task. All runs use the boost alone, without the OGM-GE composition, so that $\alpha$ is the only quantity varied and acts in isolation, which is also the protocol under which this sweep was conducted. Each entry is five seeds $\{42, 123, 456, 789, 1024\}$ trained for 100 epochs under the Table~\ref{tab:main_results} pipeline, reported as the mean with the population standard deviation used in Table~\ref{tab:main_results}.
+
+\begin{table}[H]
+\centering
+\caption{Boost-strength sweep on the two high-imbalance sentiment benchmarks, boost alone without the OGM-GE composition (accuracy \%, mean $\pm$ std over 5 seeds, 100 epochs, Table~\ref{tab:main_results} pipeline). The first row restates the joint-training baseline of Table~\ref{tab:main_results} for reference. No entry is marked as best: every $\alpha$ setting lies within one seed standard deviation of the baseline on both benchmarks, so none of these differences is resolved at this sample size.}
+\label{tab:alpha_sentiment}
+\vspace{0.3em}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Setting} & \textbf{CH-SIMS} & \textbf{CMU-MOSI} \\
+\midrule
+Baseline (Table~\ref{tab:main_results}) & $70.42 \pm 0.29$ & $72.42 \pm 0.48$ \\
+\midrule
+$\alpha = 0.25$           & $70.90 \pm 0.55$ & $71.89 \pm 0.81$ \\
+$\alpha = 0.5$ (default)  & $69.80 \pm 0.80$ & $71.89 \pm 0.82$ \\
+$\alpha = 0.75$           & $70.37 \pm 0.41$ & $71.92 \pm 0.78$ \\
+$\alpha = 1.0$            & $70.42 \pm 0.87$ & $71.86 \pm 0.91$ \\
+$\alpha = 1.5$            & $70.02 \pm 0.50$ & $71.86 \pm 0.78$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Accuracy is flat in $\alpha$ on both benchmarks. On CH-SIMS the five means span $1.1$~pp with no monotone trend in $\alpha$ (Spearman $\rho = -0.30$, $p = 0.62$), and the two ends of the range are not distinguishable from each other ($\alpha{=}1.5$ versus $\alpha{=}0.25$, paired $t$-test over the five shared seeds, $p = 0.169$). On CMU-MOSI the five means span $0.06$~pp and the same comparison gives $p = 0.917$. No setting departs from the Table~\ref{tab:main_results} baseline by more than $0.62$~pp on either benchmark, which is within the seed standard deviation of the sweep entry in question, so we do not read the highest CH-SIMS entry ($\alpha{=}0.25$, $+0.48$~pp) as a gain. Across a sixfold range of $\alpha$, then, increasing the boost strength neither unlocks additional weak-modality learning on these benchmarks nor degrades accuracy by amplifying the less informative modalities.
+
+The $\alpha{=}0.5$ rows reproduce the PGGB entries of Table~\ref{tab:main_results} exactly on both benchmarks, $69.80$ on CH-SIMS and $71.89$ on CMU-MOSI. These rows are a consistency check on the pipeline rather than an additional result.
+
+The flatness is consistent with the post-hoc probe measurements of Appendix~\ref{app:posthoc_sentiment}, where the weak-modality representations on these two benchmarks are essentially unchanged under the boost and appear intrinsically limited rather than suppressed. On that reading the strength of the boost is not the binding factor, so varying it has little to act on. We note that this is not an instance of the self-attenuation bound of Proposition~\ref{prop:attenuation}, which applies when the utilization gap is small, whereas both benchmarks here sit in the high-imbalance group (Section~\ref{sec:imbalance_cat}). The flatness reported above is an empirical observation on these two benchmarks and not a consequence of that analysis.
+
+\subsection{Wall-clock and memory overhead}
+\label{app:overhead}
+
+Table~\ref{tab:overhead} reports the measured cost of probe-guided gradient boosting relative to unmodified joint training. All three configurations were timed on a single RTX~4090 under an identical data pipeline on CREMA-D (3-frame), and we report the mean seconds per epoch over 7 epochs alongside the peak GPU memory observed during training.
+
+\begin{table}[H]
+\centering
+\caption{Wall-clock and peak-memory cost on CREMA-D (3-frame), single RTX~4090, mean seconds per epoch over 7 epochs under an identical data pipeline. Relative overhead is measured against the baseline row. Peak GPU memory ranged from $12.1$ to $12.3$~GB across all three configurations.}
+\label{tab:overhead}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Configuration} & \textbf{s/epoch} & \textbf{Overhead} & \textbf{Peak GPU memory} \\
+\midrule
+Baseline (joint training) & $17.43$ & reference & $\approx 12.2$~GB \\
+PGGB (probes + boost)     & $17.71$ & $+1.61\%$ & $\approx 12.2$~GB \\
+PGGB+OGM-GE               & $18.71$ & $+7.34\%$ & $\approx 12.2$~GB \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The probe-attributable overhead is $+1.61\%$, slightly above the approximate figure quoted in Section~\ref{sec:datasets}. The remaining $\approx 5.7$~pp in the composed row is OGM-GE's own per-modality contribution computation, which OGM-GE incurs whether or not the boost is applied, so composing the two mechanisms adds no timing cost beyond the sum of their individual costs. Peak memory is unchanged across the three configurations. Each probe is a single linear layer of roughly 3K parameters, approximately $0.03\%$ of one ResNet-18 encoder, and the EMA state is two scalars per modality (the smoothed probe accuracy $\bar{P}_m$ and the smoothed boost scale $\bar{s}_m$), four scalars in total for this two-modality run.
 \subsection{Probe signal stability}
 \label{app:probe_stability}
 
@@ -924,6 +981,22 @@ Visual & $9.32$ & $4.36$ & $-53\%$ \\
 Two observations follow. First, on the visual modality, which is the operative signal for the boost decision, the EMA reduces variance by approximately $53\%$ (from $9.32$ to $4.36$~pp), consistent in direction with the Eq.~\ref{eq:ema_probe} prediction. The observed $53\%$ reduction is below the $\approx 95\%$ i.i.d.\ steady-state bound, as expected under non-stationary training. This confirms that the scheduler operates on a temporally stable signal rather than on mini-batch noise. Second, the audio entry (EMA std $0.99$~pp $>$ batch std $0.31$~pp) is a transparent non-stationarity artifact rather than a violation of the bound: the batch-level audio probe is concentrated near its training-distribution ceiling (the linear probe readily separates audio features on training batches and is not informative about fine-grained variations at that scale), while the EMA integrates earlier training-phase samples from before probe saturation. The variance-reduction guarantee of Eq.~\ref{eq:ema_probe} is therefore empirically validated on the modality that drives the boost decision, and the audio result is consistent with the non-i.i.d.\ caveat noted in the main body.
 
 The EMA signal correlates monotonically with the full-test probe accuracy (Pearson $r=0.96$ visual, $0.88$ audio, Spearman $\rho=0.95$, $0.89$), though the full-test quantity measures generalization to held-out data and differs in absolute value from $\bar{P}_m$ by several pp. This distinction is intentional: the scheduler targets training-distribution representation quality (what each modality contributes to the joint fit during training), which is distinct from held-out generalization. Targeting the former is the appropriate signal for in-training gradient balancing. The correlation confirms that the two quantities are monotonically related, while the absolute offset reflects the train--test gap intrinsic to representation learning.
+
+\subsection{Early probe trajectory and the absence of a warm-up phase}
+\label{app:probe_trajectory}
+
+Appendix~\ref{app:probe_stability} shows that the smoothed probe signal is stable once training is under way. A separate question is whether it points in the right direction from the start, since the scheduler begins acting on it within the first $K$ iterations, and an early signal that identified the wrong modality would boost the dominant encoder during the phase in which the imbalance forms. To examine this we instrumented a seed-42 PGGB+OGM-GE run on CREMA-D (3-frame), using the recording protocol of Appendix~\ref{app:probe_stability}, and logged at every probe event the EMA-smoothed probe accuracy $\bar{P}_m$ (Eq.~\eqref{eq:ema_probe}) for both modalities. This is the quantity the scheduler consumes, as distinct from the per-batch sample $P_m$. The run reproduces the seed-42 member of the PGGB+OGM-GE arm of Table~\ref{tab:main_results}, reaching $71.37\%$ best accuracy, and probe evaluation every $K=20$ iterations yields 500 events over the 100 epochs.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figures/probe_trajectory_early.pdf}
+\caption{Early and full-run probe trajectory on CREMA-D (PGGB+OGM-GE, seed 42). Both panels plot the EMA-smoothed per-modality probe accuracy $\bar{P}_m$, which is the quantity the scheduler consumes. (a) The first fifteen probe events, spanning the first three epochs, with the first event annotated. The ordering of the two modalities is inverted at that event alone, where both probes sit at chance level on the 32-sample evaluation half. (b) The same two curves over the full 100-epoch run, with the utilization gap $\delta$ (Eq.~\eqref{eq:utilization_gap}) shaded. Audio leads at each of the remaining 499 events.}
+\label{fig:probe_trajectory}
+\end{figure}
+
+Audio is identified as the dominant modality from the second probe event onward and at every event after it. The audio-minus-visual difference in $\bar{P}_m$ is $+0.37$, $+0.65$, $+1.21$, and $+3.90$~pp at events 2 to 5, $+11.66$~pp at the end of epoch 2, $+14.58$~pp at the end of epoch 3, and $+30.78$~pp at the end of training (EMA audio $94.59\%$, visual $63.82\%$). Across all 500 events the ordering is inverted exactly once, at the first event, where the smoothed values are $0.94\%$ for audio and $1.56\%$ for visual, an audio-minus-visual difference of $-0.63$~pp. We read this inversion as a property of the estimator rather than as a statement about the data. The underlying raw accuracies on the 32-sample evaluation half are $9.4\%$ (3 of 32) and $15.6\%$ (5 of 32), both within two binomial standard deviations ($\sigma \approx 6.6$~pp at $n=32$) of the $16.67\%$ chance level of the six-class task, so neither probe has yet separated its features and the ordering between them carries no signal. The smoothed values are an order of magnitude below the raw ones because $\bar{P}_m$ is initialized at zero (Algorithm~\ref{alg:pgb}) and is still ramping after a single update at $\beta = 0.1$. We note that the utilization gap $\delta$ of Eq.~\eqref{eq:utilization_gap} is a spread over modalities and is non-negative by construction. The signed differences quoted here carry a sign only to make the ordering explicit.
+
+The run applies no warm-up period to the boost, and these measurements do not indicate that one is needed. Three considerations bound the cost of a misdirected early window. First, the smoothed scales are initialized at the neutral value $\bar{s}_m = 1$ (Algorithm~\ref{alg:pgb}), so training starts with no intervention. Second, the first probe event falls at iteration 19 of the run's 10{,}500 training iterations, so at most one $K$-iteration window can precede a correctly oriented signal. Third, a single misdirected event moves a smoothed scale to at most $1 + \mu\alpha \approx 1.23$ for $\mu = 0.3$ and $\alpha = 0.75$, well inside the cap $s_{\max} = 2.0$ that Proposition~\ref{prop:bounded} certifies, and the scale then relaxes toward the correct assignment at rate $(1-\mu)$ per event once the ordering settles. These readings come from one instrumented run, on one seed and one benchmark, so they indicate that the signal orients itself immediately in this configuration rather than establishing that it must. The bound above limits rather than removes the effect of an early misdirected window, and a warm-up would remain a reasonable precaution on a benchmark where the early probe signal was found to be persistently inverted.
 
 \subsection{Composability across balancing method families}
 \label{app:composability}
@@ -996,10 +1069,39 @@ PGGB+OGM-GE ($\alpha{=}0.75$)   & 57.85{\scriptsize$\pm$1.03}  & 55.54{\scriptsi
 \end{tabular}
 \end{table}
 
+\subsection{Per-modality post-hoc probes on the sentiment benchmarks}
+\label{app:posthoc_sentiment}
+
+Table~\ref{tab:probe_accuracy_sentiment} extends the CREMA-D analysis of Appendix~\ref{app:posthoc_probe_table} to the two text-dominant sentiment benchmarks, CH-SIMS and CMU-MOSI. The protocol matches Table~\ref{tab:probe_accuracy}: linear probes trained post hoc on frozen features from each method's saved final checkpoint, averaged over 5 seeds. Gap is the strongest minus the weakest per-modality probe accuracy.
+
+\begin{table}[H]
+\centering
+\caption{Post-hoc linear-probe accuracy on the text-dominant sentiment benchmarks (\%, mean over 5 seeds). Probes are trained on frozen encoder features from each method's saved final checkpoint, following the protocol of Table~\ref{tab:probe_accuracy}. Gap is the strongest minus the weakest per-modality probe accuracy. Differences between methods are small on these benchmarks, so we do not mark a best entry. The gap for the PGGB+OGM-GE composition on CH-SIMS is reported in the text.}
+\label{tab:probe_accuracy_sentiment}
+\vspace{0.3em}
+\begin{tabular}{llcccc}
+\toprule
+\textbf{Dataset} & \textbf{Method} & \textbf{Text (strong)} & \textbf{Audio} & \textbf{Vision} & \textbf{Gap (pp)} \\
+\midrule
+\multirow{2}{*}{CH-SIMS}  & Baseline              & 64.95 & 51.29 & 59.78 & 13.66 \\
+                          & PGGB ($\alpha{=}0.5$) & 66.43 & 53.17 & 60.09 & 13.26 \\
+\midrule
+\multirow{2}{*}{CMU-MOSI} & Baseline              & 70.99 & 48.86 & 54.49 & 22.13 \\
+                          & PGGB ($\alpha{=}0.5$) & 71.72 & 49.24 & 53.47 & 22.48 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+On both benchmarks the probe movements are small and, more importantly, non-selective. The dominant text modality rises alongside the weaker ones, by $+1.48$~pp on CH-SIMS against $+1.88$~pp for audio and $+0.31$~pp for vision, and by $+0.73$~pp on CMU-MOSI against $+0.38$~pp for audio and $-1.02$~pp for vision. The utilization gap is consequently close to unchanged: $13.66 \to 13.26$~pp on CH-SIMS under PGGB and $13.04$~pp under the PGGB+OGM-GE composition, and $22.13 \to 22.48$~pp on CMU-MOSI under PGGB.
+
+This differs from the CREMA-D pattern of Appendix~\ref{app:posthoc_probe_table}, where the same composition raises the weak visual probe by $+9.41$~pp, moves the strong audio probe by only $-0.81$~pp, and reduces the gap by a factor of $5.4$ (Figure~\ref{fig:probe_accuracy}). One reading consistent with both observations is that targeted weak-modality recovery occurs where the weak modality is undertrained rather than uninformative, that is, where encoder parameters can still respond to the boost and imbalance is severe. On the sentiment pipelines the inputs are pre-extracted features passed to small MLP heads (Appendix~\ref{app:datasets_list}) and text is close to multimodally sufficient on its own~\citep{liu2022chsimsv2,wei2025dgl}, so the weaker modalities appear intrinsically limited rather than suppressed, and the boost has correspondingly little suppressed signal to recover. This is an interpretation of the probe movements rather than a separate measurement.
+
+We note finally that these are post-hoc probes on final checkpoints, a distinct measurement from the training-time $\delta$ of Section~\ref{sec:probes} and Appendix~\ref{app:delta}, so the two sets of values are not directly comparable.
+
 \subsection{Per-dataset utilization gap}
 \label{app:delta}
 
-For transparency, we report the per-dataset utilization gap $\delta$ (Eq.~\eqref{eq:utilization_gap}) measured at the end of baseline training (final-epoch EMA-smoothed probe accuracy gap, averaged over 5 seeds). Probes follow the protocol of Section~\ref{sec:probes}: linear classifiers on stop-gradient encoder features, trained on a held-out within-batch sample. These values quantify modality-dominance dynamics during baseline training and define the high-imbalance ($\delta > 0.15$) and low-imbalance ($\delta \leq 0.15$) categorization used in Section~\ref{sec:imbalance_cat}. The high-imbalance group is heterogeneous in source: CREMA-D imbalance is audio-dominance in audio-visual emotion recognition, whereas CMU-MOSI and CH-SIMS imbalance reflects text-sufficiency, where text-only baselines are reported within roughly $1$~pp of multimodal accuracy~\citep{li2023agm,liu2022chsimsv2,wei2025dgl}. BraTS~2021 (4 MRI sequences, binary tumor-presence probes per sequence) is reported separately as a dense-prediction benchmark.
+For transparency, we report the per-dataset utilization gap $\delta$ (Eq.~\eqref{eq:utilization_gap}) measured at the end of baseline training (final-epoch EMA-smoothed probe accuracy gap, averaged over 5 seeds). Probes follow the protocol of Section~\ref{sec:probes}: linear classifiers on stop-gradient encoder features, trained on a held-out within-batch sample. These values quantify modality-dominance dynamics during baseline training and define the high-imbalance ($\delta > 0.15$) and low-imbalance ($\delta \leq 0.15$) categorization used in Section~\ref{sec:imbalance_cat}. The high-imbalance group is heterogeneous in source: CREMA-D imbalance is audio-dominance in audio-visual emotion recognition, whereas CMU-MOSI and CH-SIMS imbalance reflects text-sufficiency, where text-only baselines are reported within roughly $1$~pp of multimodal accuracy~\citep{li2023agm,liu2022chsimsv2,wei2025dgl}. BraTS~2021 (4 MRI sequences, binary tumor-presence probes per sequence) is reported separately as a dense-prediction benchmark. The two benchmarks nearest the threshold, Twitter15 ($0.150 \pm 0.096$) and CH-SIMS ($0.178 \pm 0.086$), also carry the largest seed standard deviations, so their assignment is provisional and we flag both as boundary cases.
 
 \begin{table}[H]
 \centering
@@ -1020,6 +1122,61 @@ AVE           & $0.017 \pm 0.009$ \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\subsection{Stability of the imbalance categorization}
+\label{app:delta_stability}
+
+The categorization of Section~\ref{sec:imbalance_cat} rests on a single scalar per benchmark, so it is worth asking how much of it survives a change of seed or of the epoch at which $\delta$ is read. We therefore re-extract $\delta$ from the same baseline training logs that produced Table~\ref{tab:delta_per_dataset}, once per seed and once as a seed mean read at three intermediate epochs. The measured quantity is unchanged throughout, namely the EMA-smoothed probe-accuracy gap of Eq.~\eqref{eq:utilization_gap} under baseline training with no intervention. Final-epoch means and seed standard deviations are those already reported in Table~\ref{tab:delta_per_dataset} and are not restated here.
+
+\paragraph{Seed dimension.} Table~\ref{tab:delta_per_seed} gives the per-seed final-epoch readings. The categorization is stable for five of the seven benchmarks: CREMA-D and CMU-MOSI exceed the threshold on all five seeds, and Sarcasm, Kinetics-Sounds, and AVE fall below it on all five seeds. The two benchmarks already flagged as boundary cases in Section~\ref{sec:imbalance_cat} and Appendix~\ref{app:delta} behave alike. CH-SIMS and Twitter15 each place three of five seeds above the threshold, so at the level of individual seeds the two are not separable from one another, even though their seed means fall on opposite sides of $0.15$. Twitter15 has the wider per-seed range of the two, from $0.019$ to $0.260$.
+
+\begin{table}[H]
+\centering
+\caption{Per-seed utilization gap $\delta$ at the final epoch of baseline training, for the five seeds used throughout the paper. The final column counts the seeds above the $\delta > 0.15$ threshold of Section~\ref{sec:imbalance_cat}. Seed means and standard deviations are in Table~\ref{tab:delta_per_dataset}.}
+\label{tab:delta_per_seed}
+\vspace{0.3em}
+\begin{tabular}{lcccccc}
+\toprule
+& \multicolumn{5}{c}{\textbf{Seed}} & \\
+\cmidrule(lr){2-6}
+\textbf{Dataset} & 42 & 123 & 456 & 789 & 1024 & \textbf{Seeds above threshold} \\
+\midrule
+CREMA-D         & 0.245 & 0.289 & 0.260 & 0.241 & 0.307 & 5/5 \\
+CMU-MOSI        & 0.273 & 0.191 & 0.273 & 0.195 & 0.178 & 5/5 \\
+CH-SIMS         & 0.112 & 0.154 & 0.118 & 0.322 & 0.184 & 3/5 \\
+Twitter15       & 0.221 & 0.161 & 0.019 & 0.098 & 0.260 & 3/5 \\
+Sarcasm         & 0.070 & 0.083 & 0.074 & 0.068 & 0.086 & 0/5 \\
+Kinetics-Sounds & 0.034 & 0.048 & 0.022 & 0.055 & 0.033 & 0/5 \\
+AVE             & 0.013 & 0.025 & 0.013 & 0.027 & 0.005 & 0/5 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Epoch dimension.} Table~\ref{tab:delta_by_epoch} reports the seed mean read at epochs 25, 50, and 75. Final-epoch values are those in Table~\ref{tab:delta_per_dataset}. For six of the seven benchmarks the reading epoch does not change the assignment: CREMA-D, CMU-MOSI, and CH-SIMS sit above the threshold at all three epochs, and Sarcasm, Kinetics-Sounds, and AVE sit below it at all three. Twitter15 is the exception. Its seed mean crosses the threshold during training, reading $0.148$ at epoch 25 and then $0.154$ at epoch 50 and $0.152$ at epoch 75, so whether Twitter15 is assigned to the low-imbalance or the high-imbalance group depends on the epoch at which $\delta$ is read. CREMA-D shows the largest drift in absolute terms, declining from $0.473$ at epoch 25 to $0.313$ at epoch 75 and declining further by the final epoch. This leaves it far above the threshold at every reading, but indicates that its final-epoch value is the smallest of the readings rather than a plateau.
+
+\begin{table}[H]
+\centering
+\caption{Utilization gap $\delta$ read at intermediate epochs of baseline training (seed mean over the same five seeds as Table~\ref{tab:delta_per_seed}). Final-epoch values are those in Table~\ref{tab:delta_per_dataset}.}
+\label{tab:delta_by_epoch}
+\vspace{0.3em}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Dataset} & \textbf{Epoch 25} & \textbf{Epoch 50} & \textbf{Epoch 75} \\
+\midrule
+CREMA-D         & 0.473 & 0.455 & 0.313 \\
+CMU-MOSI        & 0.198 & 0.219 & 0.226 \\
+CH-SIMS         & 0.171 & 0.178 & 0.176 \\
+Twitter15       & 0.148 & 0.154 & 0.152 \\
+Sarcasm         & 0.100 & 0.085 & 0.075 \\
+Kinetics-Sounds & 0.016 & 0.007 & 0.030 \\
+AVE             & 0.012 & 0.016 & 0.017 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Dimensions not measured, and recipe dependence.} Probe capacity remains open. Every reading above comes from the linear probes of Section~\ref{sec:probes}, and we have not measured the categorization under a one-hidden-layer probe, so we cannot separate properties of the learned representations from properties of linear probe capacity. We leave the probe-architecture dimension to future work. Separately, $\delta$ is measured on the paper's standard no-intervention configuration and therefore inherits that recipe's architecture, optimizer, and schedule choices (Section~\ref{sec:datasets}, Appendix~\ref{app:datasets_list}), so the numerical values are recipe-dependent even where the resulting assignment is not.
+
+Taken together, these readings support reporting conclusions per benchmark rather than per group, which is what we do throughout Section~\ref{sec:experiments}. The high-imbalance and low-imbalance split is a descriptive device for organizing results by operating regime, and its two boundary members, Twitter15 and CH-SIMS, are provisional.
 
 \subsection{Cross-class comparison with MSLR}
 \label{app:mslr}
