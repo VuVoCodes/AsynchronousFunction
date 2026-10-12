@@ -47,7 +47,7 @@
     \item {\bf Experimental result reproducibility}
     \item[] Question: Does the paper fully disclose all the information needed to reproduce the main experimental results of the paper to the extent that it affects the main claims and/or conclusions of the paper (regardless of whether the code and data are provided or not)?
     \item[] Answer: \answerYes{}
-    \item[] Justification: Section~\ref{sec:experiments} and Appendix~\ref{app:datasets} specify datasets, splits, encoders (ResNet-18 for audio and visual, text encoders per dataset), fusion architecture, optimizers, learning rates, batch size, epochs, and all method hyperparameters ($\alpha$, $s_{\max}$, $\beta$, $\mu$, $K$, $\gamma$). The reproduction-protocol paragraph in Section~\ref{sec:experiments} documents matched-pipeline choices across baselines. Five seeds per experiment are used throughout, and all training scripts under \texttt{scripts/} and configurations under \texttt{configs/} will be released.
+    \item[] Justification: Section~\ref{sec:experiments} and Appendix~\ref{app:datasets} specify datasets, splits, encoders (ResNet-18 for audio and visual, text encoders per dataset), fusion architecture, optimizers, learning rates, batch size, epochs, and all method hyperparameters ($\alpha$, $s_{\max}$, $\beta$, $\mu$, $K$, $\gamma$). The reproduction-protocol paragraph in Section~\ref{sec:experiments} documents matched-pipeline choices across baselines. Five seeds per experiment are used throughout, and all training scripts under \texttt{scripts/} and configurations under \texttt{configs/} are publicly available under the MIT license at \url{https://github.com/VuVoCodes/Neurips2026_PGGB}.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer \answerNA{} means that the paper does not include experiments.
@@ -67,7 +67,7 @@
 \item {\bf Open access to data and code}
     \item[] Question: Does the paper provide open access to the data and code, with sufficient instructions to faithfully reproduce the main experimental results, as described in supplemental material?
     \item[] Answer: \answerYes{}
-    \item[] Justification: Anonymized code is provided in the supplementary material (\texttt{pggb\_supplementary.zip}), including all training scripts under \texttt{scripts/}, per-dataset configurations under \texttt{configs/}, source under \texttt{src/}, and a \texttt{README.md} with reproduction instructions. A public repository under MIT license will be released upon acceptance. All datasets are standard public benchmarks (CREMA-D, AVE, Kinetics-Sounds, CMU-MOSI, CH-SIMS, Twitter15, Sarcasm, BraTS~2021), with references in Section~\ref{sec:experiments} and Appendix~\ref{app:datasets}. No proprietary data is used.
+    \item[] Justification: Code is publicly available under the MIT license at \url{https://github.com/VuVoCodes/Neurips2026_PGGB}, including all training scripts under \texttt{scripts/}, per-dataset configurations under \texttt{configs/}, source under \texttt{src/}, and a \texttt{README.md} with reproduction instructions. All datasets are standard public benchmarks (CREMA-D, AVE, Kinetics-Sounds, CMU-MOSI, CH-SIMS, Twitter15, Sarcasm, BraTS~2021), with references in Section~\ref{sec:experiments} and Appendix~\ref{app:datasets}. No proprietary data is used.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer \answerNA{} means that paper does not include experiments requiring code.
@@ -178,7 +178,7 @@
 \item {\bf New assets}
     \item[] Question: Are new assets introduced in the paper well documented and is the documentation provided alongside the assets?
     \item[] Answer: \answerNA{}
-    \item[] Justification: No new datasets or pretrained models are released. Code will be released upon acceptance with documentation, including a README, configuration files, and sweep scripts.
+    \item[] Justification: No new datasets or pretrained models are released. Code is publicly available under the MIT license at \url{https://github.com/VuVoCodes/Neurips2026_PGGB} with documentation, including a \texttt{README.md}, configuration files, and sweep scripts.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer \answerNA{} means that the paper does not release new assets.
