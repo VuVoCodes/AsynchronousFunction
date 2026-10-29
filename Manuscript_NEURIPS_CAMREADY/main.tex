@@ -57,9 +57,9 @@
   \texttt{s3575819@rmit.edu.vn} \\
   \And
   Haytham Fayek \\
-  School of Science, Engineering \& Technology \\
+  School of Computing Technologies \\
   RMIT University \\
-  \texttt{haytham.fayek@rmit.edu.au} \\
+  \texttt{haytham.fayek@ieee.org} \\
   \And
   Thuy Nguyen \\
   School of Science, Engineering \& Technology \\
@@ -77,12 +77,12 @@
 \begin{abstract}
 
 Jointly trained multimodal networks frequently underutilize their weaker modalities, as faster-learning modalities dominate the shared fusion objective and suppress the gradient signal reaching slower ones. Most existing approaches throttle the dominant modality, whereas directly boosting the weaker modality often fails because monitoring signals derived from the joint loss are entangled with, and thus dominated by, the stronger modality.
-We propose a new gradient modulation approach, probe-guided gradient boosting (PGGB), to address the problem by probing and boosting the weak modalities while preserving the strength of the dominant modality. 
+We propose a new gradient modulation approach, probe-guided gradient boosting (PGGB), to address this problem by probing and boosting the weak modalities while preserving the strength of the dominant modality. 
 Probing is performed by attaching a lightweight linear classifier to each modality’s stop-gradient features to estimate the corresponding representation quality score. The unbiased gap between these scores across modalities, the \emph{utilization gap}, serves as an imbalance signal that defines a bounded and smoothed scaling factor adaptively reweighing the gradients of weaker modalities, enabling stable and effective rebalancing during joint optimization.
-The method is composable with throttling methods as the intervention leaves the loss and fusion architecture unchanged. 
-Extensive experiments were conducted across eight benchmarks spanning four domains and 2–4 modalities. The results show that our method outperforms state-of-the-art approaches on highly imbalanced multimodal datasets, while remaining competitive on benchmarks with low or no modality imbalance.
+PGGB is composable with throttling methods as the intervention leaves the loss and fusion architecture unchanged. 
+Extensive experiments were conducted across eight benchmarks spanning four domains and 2–4 modalities. The results show that PGGB outperforms state-of-the-art approaches on highly imbalanced multimodal datasets, while remaining competitive on benchmarks with low or no modality imbalance.
 Bounded scaling, self-attenuation, and a standard-SGD descent bound were established under standard smoothness and bounded-variance assumptions. 
-Code is available at \url{https://github.com/VuVoCodes/Neurips2026_PGGB}.
+Code is available at \url{https://github.com/VuVoCodes/PGGB}.
 \end{abstract}
 
 %=============================================================================
@@ -111,7 +111,7 @@ Multimodal learning integrates complementary signals across heterogeneous source
 % Many methods exist, dominated by throttling paradigm.
 % Key limitation: boosting the weak fails with coupled monitoring.
 
-Existing methods share a \emph{throttle-only bias}, intervening primarily by damping the dominant modality's gradient~\citep{peng2022ogmge,wei2024mmpareto,guo2024cggm,wei2024opm,fan2023pmr,kontras2024mlgm}. Some include nominally bidirectional terms~\citep{li2023agm,gao2025arm,huang2025inforeg,wei2025improving}, but throttling empirically dominates, and \citet{wei2024opm}'s symmetric boost-direction variant fails to close the gap. In late-fusion, every encoder's gradient flows through a shared classifier whose loss-derivative is dominated by the strong modality's contribution to the fusion loss. Amplifying the weak encoder's gradient therefore rescales an already-corrupted shared signal. Recent methods take partial steps~\citep{yang2025iprm,jiang2025aug} but continue to monitor imbalance through signals coupled to the joint training objective.
+Existing methods mostly focusing on \emph{throttling-only}, intervening primarily by damping the dominant modality's gradient~\citep{peng2022ogmge,wei2024mmpareto,guo2024cggm,wei2024opm,fan2023pmr,kontras2024mlgm}. Some include nominally bidirectional terms~\citep{li2023agm,gao2025arm,huang2025inforeg,wei2025improving}, but throttling empirically dominates, and \citet{wei2024opm}'s symmetric boost-direction variant fails to close the modality gap. In late-fusion, every encoder's gradient flows through a shared classifier whose loss-derivative is dominated by the strong modality's contribution to the fusion loss. Amplifying the weak encoder's gradient therefore rescales an already-corrupted shared signal. Recent methods take partial steps~\citep{yang2025iprm,jiang2025aug} but continue to monitor imbalance through signals coupled to the joint training objective.
 
 % --- P4: Proposed method (high-level, 4 sentences) ---
 % Probe-guided gradient boosting with decoupled monitoring.
@@ -177,7 +177,7 @@ Jointly trained multimodal networks frequently underperform their best unimodal 
 % Cite: chen2018gradnorm, yu2020pcgrad, peng2022ogmge, li2023agm, guo2024cggm, kontras2024mlgm
 % 5-6 sentences.
 
-The dominant response has been to modulate gradient magnitudes during backpropagation. Multi-task precursors GradNorm~\citep{chen2018gradnorm} and PCGrad~\citep{yu2020pcgrad} inspired a line of multimodal work. OGM-GE~\citep{peng2022ogmge} dampens the dominant modality's gradient via a ratio of per-modality contributions to the target-class score, refined by AGM~\citep{li2023agm}, CGGM~\citep{guo2024cggm}, and MLGM~\citep{kontras2024mlgm}. Although some methods include bidirectional terms, throttling empirically dominates and boost-only variants remain ineffective: the symmetric boost direction (OGM*) reported in~\citet{wei2024opm} fails to close the modality gap, which we attribute to coupled monitoring signals affected by the dominant modality (Section~\ref{sec:method}). M-SAM~\citep{nowdeh2025msam} pairs Shapley attribution with sharpness-aware perturbation, inheriting the same coupled-monitoring limitation.
+The dominant response has been to modulate gradient magnitudes during backpropagation. Multi-task precursors GradNorm~\citep{chen2018gradnorm} and PCGrad~\citep{yu2020pcgrad} inspired a line of multimodal work. OGM-GE~\citep{peng2022ogmge} dampens the dominant modality's gradient via a ratio of per-modality contributions to the target-class score, refined by AGM~\citep{li2023agm}, CGGM~\citep{guo2024cggm}, and MLGM~\citep{kontras2024mlgm}. Although some methods include bidirectional terms, throttling empirically dominates and boost-only variants remain ineffective: the symmetric boost direction (OGM*) reported in~\citet{wei2024opm} fails to close the performance gap of the modalities, which we attribute to coupled monitoring signals affected by the dominant modality (Section~\ref{sec:method}). M-SAM~\citep{nowdeh2025msam} pairs Shapley attribution with sharpness-aware perturbation, inheriting the same coupled-monitoring limitation.
 
 
 % --- 2.3: Beyond gradient modulation ---
@@ -807,9 +807,9 @@ Algorithm~\ref{alg:pgb} below specifies the full training pass referenced in Sec
 
 \noindent\textbf{Kinetics-Sounds (KS):} KS~\citep{arandjelovic2017kinetics} is a curated 31-class subset of the Kinetics action-recognition dataset whose actions are both visually and audibly recognizable. It contains roughly 25{,}000 10-second YouTube clips, split into 22{,}408 training and 3{,}000 testing clips. Encoder setup follows AVE (ImageNet-pretrained ResNet-18 backbones on audio spectrograms and 3 RGB frames). Available at \url{https://github.com/cvdfoundation/kinetics-dataset}.
 
-\noindent\textbf{CH-SIMS:} CH-SIMS~\citep{yu2020chsims} is a language-audio-visual sentiment dataset of YouTube opinion videos. The dataset is divided into 16{,}326 training samples, 1{,}871 validation samples, and 4{,}659 testing samples. We use pre-extracted BERT (768-d) text, COVAREP (74-d) audio, and FACET (35-d) visual features, and bucket the continuous sentiment labels into 7 classes following prior convention. Each modality is processed by a two-layer MLP with 512-d hidden layer and dropout $0.3$. Available at \url{https://github.com/CMU-MultiComp-Lab/CMU-MultimodalSDK}.
+\noindent\textbf{CH-SIMS:} CH-SIMS~\citep{yu2020chsims} is a Mandarin Chinese language-audio-visual sentiment dataset of 2{,}281 video segments. It is divided into 1{,}368 training, 456 validation, and 457 testing samples. We use pre-extracted Chinese BERT-base ($39 \times 768$) text, LibROSA ($400 \times 33$) audio, and OpenFace 2.0 ($55 \times 709$) visual features with the supplied 3-class sentiment labels (negative, neutral, positive). Features are z-score normalized per dimension and mean-pooled over the temporal axis before encoding. Each modality is processed by a two-layer MLP with 512-d hidden layer and dropout $0.3$. Available through the MMSA (MultiModal Sentiment Analysis) toolkit at \url{https://github.com/thuiar/MMSA}.
 
-\noindent\textbf{CMU-MOSI:} CMU-MOSI~\citep{zadeh2016mosi} is a smaller sentiment dataset with the same three modalities as CH-SIMS. It is divided into 1{,}284 training, 229 validation, and 686 testing samples. Features are GloVe (300-d) text, COVAREP (5-d) audio, and FACET (20-d) visual. Encoder architecture is identical to CH-SIMS. Available at \url{https://github.com/CMU-MultiComp-Lab/CMU-MultimodalSDK}.
+\noindent\textbf{CMU-MOSI:} CMU-MOSI~\citep{zadeh2016mosi} is an English language-audio-visual sentiment dataset with the same three modalities as CH-SIMS. It is divided into 1{,}283 training, 214 validation, and 686 testing samples. We use pre-extracted GloVe (300-d) text, COVAREP (74-d) audio, and FACET (35-d) visual features, each as 50-step sequences, with continuous sentiment scores which we binarize at zero into 2-class labels (negative, positive). Features are mean-pooled over the temporal axis before encoding. Encoder architecture is identical to CH-SIMS. Available at \url{https://github.com/CMU-MultiComp-Lab/CMU-MultimodalSDK}.
 
 \noindent\textbf{Twitter15:} Twitter15~\citep{yu2019tombert, zhang2018adaptive} is a text-image sentiment dataset of tweets with associated images, covering three classes (positive, neutral, negative). It is divided into 3{,}179 training pairs, 1{,}122 validation pairs, and 1{,}037 testing pairs. We use MLP heads on frozen BERT-base (768-d) text and ImageNet ResNet-18 (512-d) image features, so only the heads are trainable and gradient-balancing methods act on them. Available at \url{https://github.com/jefferyYu/TomBERT}.
 
