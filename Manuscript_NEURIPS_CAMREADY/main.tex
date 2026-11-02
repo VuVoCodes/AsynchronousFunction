@@ -6,7 +6,7 @@
 
 \usepackage[utf8]{inputenc} % allow utf-8 input
 \usepackage[T1]{fontenc}    % use 8-bit T1 fonts
-\usepackage{hyperref}       % hyperlinks
+\usepackage[hidelinks]{hyperref}       % hyperlinks
 \usepackage{url}            % simple URL typesetting
 \usepackage{booktabs}       % professional-quality tables
 \usepackage{amsfonts}       % blackboard math symbols
@@ -58,7 +58,7 @@ for Multimodal Learning}
   RMIT University \\
   \texttt{s3575819@rmit.edu.vn} \\
   \And
-  Haytham Fayek \\
+  Haytham M. Fayek \\
   School of Computing Technologies \\
   RMIT University \\
   \texttt{haytham.fayek@ieee.org} \\
@@ -567,7 +567,7 @@ Fixing dataset and architecture but varying encoder initialization gives the sha
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.72\textwidth]{figures/probe_accuracy_cremad_posthoc.pdf}
+\includegraphics[width=1.0\textwidth]{figures/probe_accuracy_cremad_posthoc.pdf}
 \caption{Per-modality diagnostics on CREMA-D (5 seeds). \textbf{(a)} Post-hoc linear-probe accuracy $P_m^{\text{post}}$ (Appendix~\ref{app:posthoc_probe_table}). Dotted line marks chance ($1/6$). AGM and MILES collapse the weak probe. \textbf{(b)} Utilization gap $|P_a^{\text{post}} - P_v^{\text{post}}|$. PGGB+OGM-GE attains $2.31$~pp ($5.4\times$ reduction vs.\ baseline gap). Error bars: $\pm 1$ std.}
 \label{fig:probe_accuracy}
 \end{figure}
@@ -587,7 +587,7 @@ We propose PGGB, a method for balanced multimodal learning that amplifies the co
 
 \emph{Limitations.} Per-setting tuning is required, probes add small compute overhead, and composition with throttling can regress when the dominance gap is small (worst case AVE-from-scratch $-4.56$~pp, \S\ref{sec:operating_conditions}), a composition our propositions do not cover. Those propositions are safety properties: they bound the intervention and, under Proposition~\ref{prop:convergence}'s conditions, preserve standard descent at any imbalance level, but do not guarantee gap closure, which is established only empirically. The two benchmarks nearest the threshold, Twitter15 and CH-SIMS, carry the largest seed variances, so their categorization is provisional (Appendix~\ref{app:delta_stability}). Finally, PGGB does not distinguish undertrained modalities from intrinsically less task-informative ones: composition recovers the former (CREMA-D), whereas on the sentiment benchmarks the weak-modality representations are essentially unchanged (Appendix~\ref{app:posthoc_sentiment}), a diagnosis available only post hoc. Actuation is also optimizer-dependent: scaling reaches the updates under SGD, whereas Adam's second-moment normalization absorbs most of it, so measured gains concentrate on the SGD pipelines (Appendix~\ref{app:optimizer}), leaving optimizer-state-aware actuation to future work.
 
-\emph{Future work.} Probe-driven adaptive composition that engages throttling only when the dominance gap warrants, extension beyond classification and segmentation and \S\ref{sec:operating_conditions} should precede deployment.
+\emph{Future work.} Probe-driven adaptive composition that engages throttling only when the dominance gap warrants, extension beyond classification and segmentation. The operating conditions of \S\ref{sec:operating_conditions} should precede deployment.
 
 
 %=============================================================================
